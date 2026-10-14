@@ -1,0 +1,55 @@
+---
+title: "Size and measure a host"
+description: "Use measured workload peaks and startup reliability instead of a theoretical VM count."
+icon: "gauge-high"
+---
+
+There is no universal computers-per-host number. Browser page count, native
+applications, rendering jobs, guest type and startup overlap all change the result.
+Model inference runs elsewhere unless your product separately places it on this host.
+
+## Start with admission limits
+
+`pool.max_running` caps running computers. Memory admission checks current host
+availability against the new guest's configured memory plus
+`min_available_memory_mib`. It does not reserve the unused memory limits of
+every existing guest.
+
+A rough planning bound is the memory left after host/headroom divided by the
+measured per-guest peak. That estimate is not a concurrency qualification.
+Retained disks and checkpoints need a separate storage budget.
+
+| Cost | Measure |
+| --- | --- |
+| Host pressure | Available memory, swap, load, disk and CPU deltas |
+| Guest memory | Incus guest memory counters and host process RSS separately |
+| Startup | Attachment latency, readiness failures and peak overlap |
+| Desktop work | CPU and memory during actual application tasks |
+| Reliability | Repeated starts, control handoffs and cold restarts |
+
+## Sample real counters
+
+~~~bash
+python3 infra/host-metrics.py --project meerkat-computer
+~~~
+
+The command is read-only. Take timestamped samples and calculate CPU deltas.
+Cumulative CPU ticks are not instantaneous utilization. Some stopped-guest metrics
+are unavailable and remain null.
+
+Use the [live qualification controller](/development/verification) with increasing
+concurrency and a fresh report directory. Inspect failures as well as averages.
+A small, stable pool is more useful than a high nominal cap with unreliable starts.
+
+## What existing evidence does and does not prove
+
+Historical qualification covered two-guest VM and container lifecycle paths and
+bounded browser/native tasks. Later full-app container cold starts at eight and
+twelve guests failed qualification even with substantial free memory. Those runs
+do not establish a hard memory ceiling or reliable concurrency at those sizes.
+
+The exact workloads, revisions and measurements are retained in
+[VERIFICATION.md](https://github.com/lukacf/meerkat-computer/blob/main/VERIFICATION.md).
+Do not transfer their density directly to a different image, kernel, app workload
+or startup pattern. Full-state forks also need memory for every running child;
+there is no shared copy-on-write RAM promise.

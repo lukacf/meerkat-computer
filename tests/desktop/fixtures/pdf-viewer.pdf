@@ -1,0 +1,121 @@
+%PDF-1.4
+%“Œ‹ž ReportLab Generated PDF document (opensource)
+1 0 obj
+<<
+/F1 2 0 R /F2 3 0 R
+>>
+endobj
+2 0 obj
+<<
+/BaseFont /Helvetica /Encoding /WinAnsiEncoding /Name /F1 /Subtype /Type1 /Type /Font
+>>
+endobj
+3 0 obj
+<<
+/BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding /Name /F2 /Subtype /Type1 /Type /Font
+>>
+endobj
+4 0 obj
+<<
+/Contents 9 0 R /MediaBox [ 0 0 612 432 ] /Parent 8 0 R /Resources <<
+/Font 1 0 R /ProcSet [ /PDF /Text /ImageB /ImageC /ImageI ]
+>> /Rotate 0 /Trans <<
+
+>> 
+  /Type /Page
+>>
+endobj
+5 0 obj
+<<
+/Contents 10 0 R /MediaBox [ 0 0 612 432 ] /Parent 8 0 R /Resources <<
+/Font 1 0 R /ProcSet [ /PDF /Text /ImageB /ImageC /ImageI ]
+>> /Rotate 0 /Trans <<
+
+>> 
+  /Type /Page
+>>
+endobj
+6 0 obj
+<<
+/PageMode /UseNone /Pages 8 0 R /Type /Catalog
+>>
+endobj
+7 0 obj
+<<
+/Author (Meerkat Computer test suite) /CreationDate (D:20000101000000+00'00') /Creator (anonymous) /Keywords () /ModDate (D:20000101000000+00'00') /Producer (ReportLab PDF Library - \(opensource\)) 
+  /Subject (unspecified) /Title (Meerkat PDF viewer fixture) /Trapped /False
+>>
+endobj
+8 0 obj
+<<
+/Count 2 /Kids [ 4 0 R 5 0 R ] /Type /Pages
+>>
+endobj
+9 0 obj
+<<
+/Length 462
+>>
+stream
+1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
+.082353 .34902 .635294 rg
+n 0 0 612 432 re f*
+1 1 1 rg
+BT /F2 30 Tf 36 TL ET
+BT 1 0 0 1 44 310 Tm (BLUE PAGE ONE) Tj T* ET
+BT /F1 17 Tf 20.4 TL ET
+BT 1 0 0 1 44 258 Tm (Native PDF viewer qualification) Tj T* ET
+BT 1 0 0 1 44 214 Tm (Page 1 of 2 - text and rendered color must agree.) Tj T* ET
+3 w
+n 44 175 m 568 175 l S
+BT /F1 14 Tf 16.8 TL ET
+BT 1 0 0 1 44 128 Tm (This is a deterministic local test fixture.) Tj T* ET
+ 
+endstream
+endobj
+10 0 obj
+<<
+/Length 465
+>>
+stream
+1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
+.756863 .356863 .078431 rg
+n 0 0 612 432 re f*
+1 1 1 rg
+BT /F2 30 Tf 36 TL ET
+BT 1 0 0 1 44 310 Tm (ORANGE PAGE TWO) Tj T* ET
+BT /F1 17 Tf 20.4 TL ET
+BT 1 0 0 1 44 258 Tm (Native PDF viewer qualification) Tj T* ET
+BT 1 0 0 1 44 214 Tm (Page 2 of 2 - text and rendered color must agree.) Tj T* ET
+3 w
+n 44 175 m 568 175 l S
+BT /F1 14 Tf 16.8 TL ET
+BT 1 0 0 1 44 128 Tm (This is a deterministic local test fixture.) Tj T* ET
+ 
+endstream
+endobj
+xref
+0 11
+0000000000 65535 f 
+0000000061 00000 n 
+0000000102 00000 n 
+0000000209 00000 n 
+0000000321 00000 n 
+0000000514 00000 n 
+0000000708 00000 n 
+0000000776 00000 n 
+0000001073 00000 n 
+0000001138 00000 n 
+0000001650 00000 n 
+trailer
+<<
+/ID 
+[<5492d37678a84e6a923b65bd9560ffd9><5492d37678a84e6a923b65bd9560ffd9>]
+% ReportLab generated PDF document -- digest (opensource)
+
+/Info 7 0 R
+/Root 6 0 R
+/Size 11
+>>
+startxref
+2166
+%%EOF

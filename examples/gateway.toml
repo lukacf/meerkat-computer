@@ -1,0 +1,52 @@
+# Run on an always-on trusted host, outside the GCP VM being suspended.
+# Replace all example paths and cloud identities before starting the gateway.
+# Configure the intended broker service to start at boot on the GCP host.
+listen = "127.0.0.1:18761"
+broker_url = "http://127.0.0.1:18760"
+state_dir = "/var/lib/meerkat-computer-gateway"
+host_token_env = "MEERKAT_COMPUTER_HOST_TOKEN"
+
+# Five minutes is this example's policy. Zero disables automatic suspension.
+idle_suspend_seconds = 300
+request_timeout_seconds = 300
+wake_timeout_seconds = 420
+
+# Direct argv execution: no shell expansion and no model-supplied arguments.
+# The original creation intent must contain the exact VM ID and owner marker.
+wake_command = [
+  "/opt/meerkat-computer/.venv/bin/python",
+  "/opt/meerkat-computer/infra/gcp-host.py",
+  "ensure-running",
+  "--state", "/var/lib/meerkat-computer-host/gcp-host.json",
+  "--wait-seconds", "300",
+  "--poll-seconds", "2",
+  "--apply",
+]
+suspend_command = [
+  "/opt/meerkat-computer/.venv/bin/python",
+  "/opt/meerkat-computer/infra/gcp-host.py",
+  "suspend",
+  "--state", "/var/lib/meerkat-computer-host/gcp-host.json",
+  "--wait-seconds", "300",
+  "--poll-seconds", "2",
+  "--apply",
+]
+
+# This foreground tunnel belongs to the gateway process. Its local port must
+# match broker_url, and its target port must match the remote broker's listen.
+# Every cloud selector must match the saved creation intent above.
+tunnel_command = [
+  "gcloud", "compute", "ssh", "mc-computer-host",
+  "--project=example-project",
+  "--account=operator@example.invalid",
+  "--zone=us-central1-a",
+  "--tunnel-through-iap", "--quiet", "--verbosity=error", "--",
+  "-N", "-T", "-M",
+  "-S", "/var/lib/meerkat-computer-gateway/iap.sock",
+  "-L", "127.0.0.1:18760:127.0.0.1:18760",
+  "-o", "ControlPersist=no",
+  "-o", "ForkAfterAuthentication=no",
+  "-o", "ExitOnForwardFailure=yes",
+  "-o", "ServerAliveInterval=30",
+  "-o", "ServerAliveCountMax=3",
+]

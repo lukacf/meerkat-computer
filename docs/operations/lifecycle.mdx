@@ -1,0 +1,67 @@
+---
+title: "Operate a pool"
+description: "Inspect, renew, release, stop and recover without confusing grants with guest state."
+icon: "power-off"
+---
+
+Keep lifecycle decisions in one trusted host. Every command below uses the broker
+at `http://127.0.0.1:18760` unless `--broker-url` overrides it.
+
+| Intent | Command | Meaning |
+| --- | --- | --- |
+| Inspect assignments | `list` | Read computer phases and current grant metadata |
+| Extend execution control | `renew --binding-file FILE --ttl-seconds 3600` | Renew the current grant |
+| End control | `release --binding-file FILE` | Revoke the grant without deleting disk |
+| Free running resources | `stop --computer-id ID` | Stop the exact computer and revoke control |
+| Run idle cleanup now | `reap` | Apply configured idle-stop policy |
+| Resolve operator shell | `access --computer-id ID` | Return verified host-side shell arguments |
+
+Use `./scripts/repo-cargo run -- COMMAND` from a source checkout. See
+[CLI reference](/reference/cli) for credential flags and argument defaults.
+
+## Renewal and shutdown
+
+Renew before expiry and keep the returned binding metadata. The host must stop
+admitting calls when renewal is unresolved. Drain in-flight work before release;
+a timeout is not proof that a command stopped or a grant was released.
+
+The reaper runs every 30 seconds. Release leaves a computer idle, and
+`idle_stop_seconds` controls when cleanup may stop it. Zero makes an idle or
+faulted computer eligible at the next reaper pass; it does not disable cleanup.
+
+A normal stop preserves disk but ends running processes. A later attachment
+cold-boots the same computer. Browser profile data persists; exact open-tab or
+application process state is not a cold-start guarantee.
+
+The optional [host gateway](/operations/host-lifecycle) has a separate idle policy
+that suspends the entire outer host with RAM retained. Its zero idle interval
+disables autosuspend, unlike the broker's zero `idle_stop_seconds`. A live grant
+or preview polling does not keep that outer host awake.
+
+## Restart and storage
+
+Broker restart retains assignments and invalidates old grants. The host must
+attach resumed sessions again. Pending private-input requests are cancelled;
+in-flight private input and unfinished forks become unknown rather than replaying.
+
+Use one broker writer and durable local filesystem semantics. Back up:
+
+- Broker state and per-computer worker credential files.
+- Guest disks and any retained checkpoints needed for recovery.
+- The optional encrypted vault.
+- The vault key separately from its ciphertext backup.
+
+Do not run a cloned state directory beside the original. Do not infer a safe backup
+from copying files while a writer is active. Coordinate shutdown or a storage
+snapshot consistent with the chosen host backend.
+
+## Maintenance access
+
+Use `access` to verify the exact owner and incarnation before a host root shell.
+This is operator authority, not a grant reservation. Coordinate UI changes with
+the active execution. A force-stop can lose unsaved work; use it as an explicit
+operator recovery decision after verifying the target.
+
+The broker does not automatically delete idle disks or abandoned fork resources.
+Account for them before manual removal. See [security](/operations/security)
+and [fork recovery](/guides/forks#failure-and-recovery).

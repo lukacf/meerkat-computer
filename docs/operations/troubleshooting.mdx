@@ -1,0 +1,56 @@
+---
+title: "Troubleshoot by evidence"
+description: "Separate configuration, admission, worker readiness and uncertain effects."
+icon: "stethoscope"
+---
+
+Start with `rkat-computer validate --config FILE`, then an authenticated `list`.
+The broker health route checks the service; guest readiness additionally requires
+Incus, the guest agent and worker protocol checks.
+
+| Symptom | Inspect | Next step |
+| --- | --- | --- |
+| Configuration rejected | Unknown fields, capability/mode combination, profile limits | Fix the explicit configuration; do not weaken guest policy |
+| Capacity denied | Running count, available memory and configured headroom | Stop unused owned computers or lower workload overlap |
+| Guest is running but attach fails | Saved backend category, guest-agent and worker readiness | Inspect the exact instance; RUNNING is not browser readiness |
+| Stale observation | Surface, focus, page/window changes | Observe again and choose new refs |
+| Old binding refused | Expiry, takeover or broker restart | Let the host resolve control before reattaching |
+| App launches but is not ready | Fresh desktop observations and app state | Treat launch as submission, not readiness |
+| Preview is blank | Capture age, private input, pending or unknown operation | Wait for a safe capture; do not search older frames |
+| Login input fails | Exact origin, current refs, form destination and lease | Inspect request status; never replay secret input blindly |
+| Fork is unknown | Fork receipt and reserved child identities | Account for effects before any recovery action |
+| Gateway returns `host_asleep` | Whether the request is a passive read | Use trusted `ensure_host()` or an authorized demand request; preview and renewal do not wake |
+| Gateway refuses an occupied upstream port | Previous owned tunnel and saved gateway state | Reconcile the exact process group; do not adopt or kill an unrelated listener |
+| Host stays awake after an unknown result | `/host/status` inhibit and active requests | Resolve effects and background work before explicitly clearing the inhibit |
+| Native preview briefly returns 403 after a turn | Original invocation publication in the pinned native host | Use Refresh after availability returns; retain the original connection and grant |
+
+## Unknown means unresolved
+
+An `unknown_effect` response is not a confirmed failure. The command may have
+changed the guest before the response was lost. Inspect receipts and independent
+application state; do not retry a click, shell command or write automatically.
+
+Operator listings retain the most recent bounded backend failure category and
+operation. Its epoch can precede the current computer epoch. It is diagnostic
+evidence, not current authority or permission to replay.
+
+## Image or desktop problems
+
+Verify immutable image fingerprint, desktop marker and configured dimensions.
+Check that the host supports the required AppArmor and user-namespace behavior.
+A Chromium sandbox failure remains a failure; do not add `--no-sandbox`.
+
+The desktop supervisor owns Xvfb, D-Bus, AT-SPI and Openbox. Guest services and
+operator recovery commands should target the exact saved incarnation. Host root
+access is available through [the operator access path](/operations/security#developer-access-today)
+when the worker is unavailable.
+
+## Slow container image export on GCP
+
+A previously qualified OS Login/NSS case caused repeated lookups of unmapped
+container UIDs/GIDs. The infrastructure guide records a bounded `nscd` workaround.
+Apply it only after reproducing that symptom, and recheck fresh SSH and sudo
+access. Do not change OS Login, subordinate-ID ranges or SSH policy to bypass it.
+
+For logs and deeper deployment details, use the
+[infrastructure guide](https://github.com/lukacf/meerkat-computer/blob/main/infra/README.md).

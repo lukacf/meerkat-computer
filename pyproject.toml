@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "meerkat-computer"
+version = "0.1.0"
+description = "Identity-bound computer worker and thin MCP adapter for Meerkat"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+dependencies = [
+  "dbus-next>=0.2.3,<1",
+  "fastapi>=0.115,<1",
+  "httpx>=0.28,<0.29",
+  "mcp>=1.30,<2",
+  "mss>=10,<11",
+  "playwright>=1.55,<2",
+  "uvicorn>=0.34,<1",
+]
+
+[project.urls]
+Repository = "https://github.com/lukacf/meerkat-computer"
+Documentation = "https://github.com/lukacf/meerkat-computer/blob/main/README.md"
+
+[project.scripts]
+meerkat-computer-worker = "meerkat_computer.worker:main"
+meerkat-computer-mcp = "meerkat_computer.mcp_adapter:main"
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "pytest-asyncio>=1,<2", "ruff>=0.12,<1"]
+build = ["hatchling==1.27.0"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["python/meerkat_computer"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/python/meerkat_computer", "/pyproject.toml", "/README.md", "/LICENSE"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/python"]
+asyncio_mode = "auto"
+addopts = "-m 'not browser'"
+markers = ["browser: real local Chromium integration, explicitly enabled"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

@@ -1,0 +1,12 @@
+[cloud]
+project = "YOUR_GCP_PROJECT_ID"
+account = "operator@example.com"
+zone = "europe-west4-a"
+machine_type = "n2-standard-16"
+disk_gib = 200
+# Existing private subnet with Cloud NAT or another approved egress route.
+# This script never modifies the network or creates NAT resources.
+network = "REPLACE_WITH_EXISTING_NETWORK"
+subnet = "REPLACE_WITH_EXISTING_SUBNET"
+nested_virtualization = false
+max_run_seconds = 14400

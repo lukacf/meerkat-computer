@@ -1,0 +1,34 @@
+name: Linux desktop qualification
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  desktop:
+    # Private routing is never considered once the repository is public.
+    runs-on: ${{ fromJSON(github.event.repository.private && (vars.MEERKAT_COMPUTER_RUNNER || '["self-hosted","Linux","X64","meerkat-computer"]') || '"ubuntu-24.04"') }}
+    # Explicit qualification builds the full desktop image and native stack cold.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Native apps and accessibility
+        run: make smoke-desktop
+        env:
+          DESKTOP_TEST_EVIDENCE: ${{ runner.temp }}/desktop-evidence
+      - name: PDF viewer and page navigation
+        run: make smoke-pdf
+        env:
+          DESKTOP_TEST_EVIDENCE: ${{ runner.temp }}/desktop-evidence/pdf
+      - name: Rust broker, desktop worker and MCP
+        run: make smoke-desktop-stack
+      - name: Guest administrator bootstrap
+        run: make smoke-desktop-admin > "${{ runner.temp }}/desktop-evidence/guest-admin.log" 2>&1
+      - name: Save desktop evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-desktop-evidence
+          path: ${{ runner.temp }}/desktop-evidence
+          if-no-files-found: ignore

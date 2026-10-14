@@ -1,0 +1,102 @@
+---
+title: "Computer tools"
+description: "Capabilities, arguments, action types and result semantics."
+icon: "screwdriver-wrench"
+---
+
+The broker returns the tool catalog authorized by the current grant. Clients
+should discover it with MCP `tools/list` or `GET /v1/tools`; do not hardcode that
+every profile has every tool. The strict worker models reject unknown fields.
+
+## Browser, desktop and workspace
+
+| Tool | Capability | Arguments |
+| --- | --- | --- |
+| `computer_observe` | Browser or desktop | Optional surface and observation detail controls |
+| `computer_act` | Browser or desktop | Required `observation_id`, `action` |
+| `computer_apps` | Desktop | `action: list` or `launch`; launch requires `app_id` |
+| `browser_navigate` | Browser | Required `url`, up to 8192 characters |
+| `browser_tabs` | Browser | `action: list/new/select/close`; select/close require `tab_id`; only new accepts `url` |
+| `browser_upload` | Browser with semantics | Current `observation_id`, file-input `ref`, 1-16 absolute guest `paths`; 16 MiB combined |
+| `browser_downloads` | Browser | Empty object; recent completed guest downloads and pending count |
+| `computer_files` | File import or export | Empty object; metadata for this computer's permitted transfer directions |
+| `computer_upload` | File import | Staged `file_id`, guest `path`, optional `overwrite` (false) |
+| `computer_download` | File export | Guest `path` and output `filename`; returns private export metadata |
+| `workspace_exec` | Exec | Required `command`, up to 32768 characters; optional `timeout_seconds`, 1-120, default 30 |
+| `workspace_read` | Files | Required relative `path`, up to 4096 characters |
+| `workspace_write` | Files | Required relative `path` and `text`; maximum 1,048,576 UTF-8 bytes |
+
+Workspace parent directories must already exist. File operations reject traversal,
+absolute paths, symlinks and nonregular targets. Read results can be truncated.
+Shell output is bounded to 65,536 bytes and shell access is not a filesystem sandbox.
+
+The separate [file transfer tools](/guides/file-transfers) accept absolute guest
+paths or relative workspace paths. Their binary data moves through private
+transport, not model content. Host staging and collection require operator access.
+
+See [observations](/concepts/observations) for surfaces, detail, returned refs
+and the observation cursor.
+
+## Action object
+
+Every action requires `type`. `computer_act` wraps it with the latest observation ID.
+
+| Type | Required fields | Notes |
+| --- | --- | --- |
+| `click` | `ref` or `x,y` | Optional button and click count |
+| `fill` | `text` and an appropriate target | Replace editable text |
+| `type` | `text` | Enter text at the selected/focused target |
+| `key` | `key` | Key combination; optional current ref |
+| `scroll` | None beyond type | `delta_x`, `delta_y` default to zero |
+| `drag` | Start ref or `x,y`; `end_x,end_y` | Screen/viewport coordinates |
+| `focus` | `ref` | Native focus requires a semantic target |
+| `invoke` | `ref`, `action_name` | Exact advertised native action; unsupported in browser |
+
+Coordinates must include both x and y, and cannot be combined with a ref.
+Button is `left`, `middle` or `right`; click count is 1 or 2.
+Text is limited to 16,384 characters. Scroll deltas range from -10000 to 10000.
+Only invoke accepts `action_name`.
+
+Changing surface invalidates the preceding observation. Ref-based desktop input
+also checks target freshness and the active owning native window. A failed
+freshness check requires a new observation, not reuse of the old ref.
+
+## Credentials
+
+Credential tools require the optional vault and suitable browser semantics.
+Identity-owned computers can list/use explicit assignments; session-owned computers
+can request one-time input.
+
+| Tool | Arguments |
+| --- | --- |
+| `credentials_list` | Empty object |
+| `credentials_use` | `credential_id`, `target` |
+| `credentials_request` | `target` |
+| `credentials_status` | `request_id` |
+
+A target contains `origin`, `observation_id`, `secret_ref`, and optional
+`username_ref`. It never contains a password. Delivery and privacy rules are
+defined in [website credentials](/guides/credentials).
+
+## App-only preview
+
+When both ends negotiate MCP Apps, the adapter exposes `computer_preview`
+with optional `after` (a cursor up to 128 UTF-8 bytes). Its visibility is
+`["app"]`, and the normal computer tools are `["model"]`.
+The private frame/status payload is `_meta["meerkat-computer/preview"]`.
+It is not another model tool or a new screenshot command.
+
+## Interpret results correctly
+
+Normal results preserve MCP text/image blocks. Metrics describe tool operations,
+not task success. `isError` and the effect classification remain meaningful
+even when HTTP succeeded. An `unknown_effect` is not a confirmed failure.
+
+The action ID identifies the exact attempted operation. Completed duplicates
+return their saved receipt; changed arguments for that ID are refused.
+Do not silently generate another ID to replay an uncertain effect.
+
+Sources:
+[worker argument models](https://github.com/lukacf/meerkat-computer/blob/main/python/meerkat_computer/protocol.py),
+[broker catalog](https://github.com/lukacf/meerkat-computer/blob/main/src/domain.rs),
+and [private input catalog](https://github.com/lukacf/meerkat-computer/blob/main/src/domain/secure.rs).

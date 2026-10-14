@@ -1,0 +1,67 @@
+---
+title: "Contribute"
+description: "Develop against one lifecycle authority and verify the boundary you change."
+icon: "code"
+---
+
+Keep credentials, personal screenshots and local qualification outputs out of
+commits. Use ASCII hyphens in authored text.
+
+## Set up
+
+~~~bash
+uv sync --locked
+make build
+make test
+make lint
+~~~
+
+Use Make for normal lanes and `scripts/repo-cargo` for targeted Rust commands.
+The wrapper isolates output by repository/worktree. In a shared checkout, choose
+a distinct `RUST_LANE_ID` when stable separate output is needed.
+
+Read [architecture](/concepts/architecture) before changing ownership or lifecycle.
+Meerkat owns identities, sessions and agent execution. The generated computer
+machine owns resource transitions. Adapters mechanically project that authority.
+
+## Make a change
+
+Use failing tests first for behavior changes. Test the actual contract at the
+boundary you changed: stale observation, uncertain action, grant handoff, private
+input or backend readiness. Do not make a protocol adapter a second policy owner.
+
+Run the relevant [verification lane](/development/verification). A worker change
+may require a new image before live use. Record missing qualification explicitly.
+
+## Work on the docs
+
+The site lives in `docs/`, using the Meerkat documentation's Maple theme and
+shared amber palette. It runs locally and does not require publication.
+Use Node.js 22 or 24 LTS; the pinned preview CLI rejects non-LTS Node releases.
+
+~~~bash
+npm --prefix docs ci --ignore-scripts
+npm --prefix docs run check
+npm --prefix docs run dev
+~~~
+
+The preview command uses a pinned Mintlify CLI and serves the site locally.
+No cloud deployment is part of these commands. Read the preview's terminal URL;
+the CLI can choose a different port when one is occupied.
+Mintlify's local search needs CLI authentication; reading pages and navigation
+work without it.
+
+Pages use MDX frontmatter, absolute route links and Mintlify components.
+Add pages to `docs/docs.json`. Keep onboarding short, put exact contracts in
+Reference, and link to retained evidence rather than copying historical logs.
+
+The checker compiles every MDX page, validates navigation and local links,
+checks frontmatter, checks maintained root/runbook Markdown links, and rejects
+links to private local state paths. Its repository-link regression tests run first.
+Review the actual preview at desktop and narrow widths before calling a layout done.
+
+## Release changes
+
+The packaging and release procedure is maintained in
+[RELEASING.md](https://github.com/lukacf/meerkat-computer/blob/main/RELEASING.md).
+Passing a packaging gate does not publish an artifact or qualify a live host.

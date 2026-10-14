@@ -1,0 +1,14 @@
+ARG DESKTOP_TEST_IMAGE=meerkat-computer-desktop-test:local
+FROM ${DESKTOP_TEST_IMAGE}
+
+USER root
+COPY pyproject.toml uv.lock ./
+RUN uv sync --locked --group dev --no-install-project
+COPY python ./python
+COPY infra/desktop-session.py ./infra/desktop-session.py
+COPY tests/python/test_worker_shutdown.py ./tests/python/test_worker_shutdown.py
+
+USER computer
+ENV MEERKAT_COMPUTER_DESKTOP_TEST=1 PYTHONPATH=/opt/meerkat-computer/python
+ENTRYPOINT []
+CMD ["python", "-m", "pytest", "tests/python/test_worker_shutdown.py", "-m", "browser", "-p", "no:cacheprovider"]

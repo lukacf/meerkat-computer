@@ -1,0 +1,67 @@
+---
+title: "Read and inspect PDFs"
+description: "Open documents in Evince and inspect their text, metadata and rendered pages."
+icon: "file-pdf"
+---
+
+Both desktop image bundles include the native Evince viewer and Poppler utilities.
+They work inside the agent's own guest. Existing images must be rebuilt to include
+these packages; headless browser images do not install them.
+
+## Open a document
+
+Use `computer_apps` with `{"action":"list"}` and choose the returned Evince or
+Document Viewer entry. Launch its exact `app_id`, then observe the desktop until
+the window is ready. Use the viewer's Open control or `Control+o` to select a PDF
+already in the guest, such as `/workspace/report.pdf`.
+
+Observe with `computer_observe` and `{"surface":"desktop"}`. Use current
+accessibility refs for exposed controls, and screenshots for page layout, charts
+and images. Accessibility coverage does not guarantee that every PDF's reading
+order or page contents are available as semantic text.
+
+Some documents trigger inconsistent accessibility notifications in the viewer.
+Hybrid observations can still return a screenshot with an `unstable_tree` issue
+and no semantic refs. Keep accessibility enabled and follow the observation's
+input status; see [native observation fallback](/guides/native-desktop#choose-the-right-channel).
+Poppler remains useful for exact page text even when the viewer's semantics are
+incomplete.
+
+When the profile permits `workspace_exec`, a shell command can open a particular
+document directly:
+
+```bash
+evince /workspace/report.pdf >/tmp/evince.log 2>&1 &
+```
+
+The output redirection lets the shell call complete while the viewer stays open.
+Observe the desktop to confirm that the document loaded; submitting a launch does
+not prove a successful render. Evince accepts a filename and optional page or
+search arguments. See the [Evince manual](https://manpages.debian.org/bookworm/evince/evince.1.en.html).
+
+## Inspect with shell tools
+
+These commands operate on guest files through `workspace_exec`:
+
+```bash
+pdfinfo /workspace/report.pdf
+pdftotext -layout /workspace/report.pdf /workspace/report.txt
+pdftoppm -f 1 -singlefile -r 120 -png /workspace/report.pdf /workspace/report-page-1
+```
+
+`pdfinfo` reports metadata and page counts. `pdftotext` extracts embedded text;
+image-only scans may need separately installed OCR tools. `pdftoppm` writes the
+first page to `/workspace/report-page-1.png` for visual inspection. Limit page
+ranges and resolution when rasterizing large documents. See the
+[Poppler utility package](https://packages.debian.org/bookworm/poppler-utils).
+
+## Create and move documents
+
+Use Python or shell tools to create PDFs, then open the result in Evince to inspect
+the actual pages. PDF authoring libraries are not preinstalled by this change.
+
+Host files enter the guest through [file transfers](/guides/file-transfers),
+subject to the profile's transfer capabilities. Generated documents can be exported
+through the same flow. No PDF-specific MCP tool or host filesystem access is
+required. See [native applications](/guides/native-desktop) for desktop controls
+and [image builds](/deployment/images) for installing the viewer in new guests.

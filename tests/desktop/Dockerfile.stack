@@ -1,0 +1,24 @@
+ARG DESKTOP_TEST_IMAGE=meerkat-computer-desktop-test:local
+FROM rust:1.94.1-bookworm AS rust-toolchain
+FROM ${DESKTOP_TEST_IMAGE}
+
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends git build-essential \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=rust-toolchain /usr/local/rustup /opt/rustup
+COPY --from=rust-toolchain /usr/local/cargo/bin /opt/rust-bin
+ENV RUSTUP_HOME=/opt/rustup PATH=/opt/rust-bin:/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    CARGO_BUILD_JOBS=4 MEERKAT_COMPUTER_DESKTOP_TEST=1
+COPY Cargo.toml Cargo.lock rust-toolchain.toml README.md LICENSE ./
+COPY src ./src
+COPY tests/stack.rs ./tests/stack.rs
+COPY tests/support ./tests/support
+COPY ui ./ui
+COPY scripts/repo-cargo scripts/mcp_smoke.py scripts/preview_smoke.py scripts/credential_smoke.py ./scripts/
+COPY configs ./configs
+RUN git init --quiet . && ln -s /opt/venv .venv \
+    && chown -R computer:computer /opt/meerkat-computer
+USER computer
+RUN ./scripts/repo-cargo test --locked --test stack --no-run
+ENTRYPOINT ["python", "infra/desktop-session.py", "--width", "1280", "--height", "800", "--"]
+CMD ["./scripts/repo-cargo", "test", "--locked", "--test", "stack", "--", "--ignored", "--nocapture"]

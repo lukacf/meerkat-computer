@@ -1,0 +1,110 @@
+---
+title: "Broker configuration"
+description: "Exact TOML fields, defaults and capability constraints."
+icon: "sliders"
+---
+
+The schema is owned by
+[src/config.rs](https://github.com/lukacf/meerkat-computer/blob/main/src/config.rs).
+Unknown fields are rejected. Validate a file without touching infrastructure:
+
+~~~bash
+./scripts/repo-cargo run -- validate --config /private/computer.toml
+~~~
+
+Use [configs/local.toml](https://github.com/lukacf/meerkat-computer/blob/main/configs/local.toml)
+as a starting point. Its image values are placeholders, and its admission cap is
+not a measured density guarantee.
+
+## Server
+
+| Field | Required/default | Meaning |
+| --- | --- | --- |
+| `server.listen` | Required | Socket address; the broker binary requires loopback |
+| `server.state_dir` | Required, nonempty | Private durable state directory |
+| `server.operator_token_env` | Required, nonempty | Environment variable containing the operator token |
+| `credentials.key_file` | Optional table; path required if enabled | Private vault key outside state |
+
+The CLI requires an operator token of at least 32 non-whitespace characters.
+Credential material belongs in private environment/files, not TOML.
+
+## Pool
+
+| Field | Required/default | Meaning |
+| --- | --- | --- |
+| `backend` | Required, `incus` | Current backend |
+| `incus_binary` | `incus` | Incus executable |
+| `incus_project` | `meerkat-computer` | Owned base project |
+| `max_running` | Required, greater than zero | Running computer admission cap |
+| `min_available_memory_mib` | `0` | Host memory headroom |
+| `worker_port` | `18765` | Private guest worker port, nonzero |
+| `ready_timeout_seconds` | `120` | Nonzero readiness deadline |
+
+## Computer profiles
+
+Each `[profiles.NAME]` must provide:
+
+| Field | Constraint |
+| --- | --- |
+| `image` | Nonempty immutable image fingerprint for deployment |
+| `kind` | `container` or `virtual-machine` |
+| `cpus` | Greater than zero |
+| `memory_mib` | At least 128 |
+| `disk_gib` | Greater than zero; must also fit the image/backend |
+| `guest_admin` | Optional, defaults to false |
+| `capabilities` | Unique values from the table below |
+| `observation` | Mode, dimensions and optional default surface |
+| `idle_stop_seconds` | Required unsigned interval |
+| `transfers` | Optional byte limits for private file staging |
+
+Profiles are immutable for an existing computer. Different privileges or
+resources require a new environment, not an implicit update on attachment.
+
+## Observation capabilities
+
+| Mode | Required for every enabled surface |
+| --- | --- |
+| `visual` | `screenshots` |
+| `semantic` | That surface's semantics capability |
+| `hybrid` | `screenshots` and that surface's semantics capability |
+
+Valid capabilities are `browser`, `desktop`, `screenshots`,
+`browser_semantics`, `desktop_semantics`, `exec`, `files`, `file_import` and `file_export`.
+Semantics requires its surface; screenshots requires at least one surface.
+The default observation surface must be enabled.
+
+| Observation field | Required/default | Constraint |
+| --- | --- | --- |
+| `mode` | Required | `visual`, `semantic` or `hybrid` |
+| `surface` | `browser` | `browser` or `desktop`, enabled by capabilities |
+| `width` | Required | 160-3840 pixels |
+| `height` | Required | 120-2160 pixels |
+| `detail` | `compact` | `compact` or `full` |
+| `max_elements` | `300` | Per-call ceiling, 1-300 |
+| `max_text_chars` | `24000` | Per-call ceiling, 256-24000 |
+
+Desktop dimensions must match its fixed X11 display. Compact observations
+default to 60 elements and 6000 text characters, reduced by the profile ceilings.
+Full observations use the profile ceilings. A call can request lower limits but
+cannot raise the ceilings. See [observations](/concepts/observations).
+
+## File transfer limits
+
+`[profiles.NAME.transfers]` accepts `max_file_bytes` (default and maximum
+16777216) and `max_stored_bytes` (default 134217728). A storage quota must fit
+at least one maximum-size file. The broker also limits metadata entries per
+computer. Import and export are enabled independently with `file_import` and
+`file_export`; `files` still means guest workspace text I/O.
+
+These are host/guest transfer permissions, not guest network restrictions.
+See [file transfers](/guides/file-transfers) for staging, cleanup and browser use.
+
+## What is configured elsewhere
+
+Models, providers, agent identity and approvals belong to Meerkat or the product
+host. Realm/member MCP registrations are covered by
+[Console integration](/integrations/console). GCP host values live in the separate
+`[cloud]` configuration used by `infra/gcp-host.py`; they are not broker fields.
+The optional gateway also has a separate TOML schema, documented in
+[host lifecycle](/operations/host-lifecycle#configure-the-gateway). Its host token,
+timeouts and suspension policy do not belong in the broker's profile tables.

@@ -1,0 +1,287 @@
+---
+title: "Inline previews in Console"
+description: "Connect the standard MCP App through the native Console host."
+icon: "window-maximize"
+---
+
+Meerkat Computer uses ordinary Meerkat realm configuration and a standard inline
+MCP App attached to computer-use tool results. Custom Console sidebar panels are
+developer extensibility and are not part of this package.
+
+The inline app shows screenshots already produced by agent activity. Refreshes
+never capture the desktop, acquire control, advance an observation cursor or
+increase computer-use command counts. Labels are optional. No separate desktop
+stream is started. A private, pending or unknown operation withholds the saved
+frame.
+
+Rendering requires a host with native MCP Apps support. Clients without that
+capability retain ordinary text/image tool results. This guide targets the pinned
+upstream contracts listed below; it does not establish a deployed HomeCore
+integration. Broker operation and credential administration remain described in
+[security and administrator access](/operations/security) and [website credentials](/guides/credentials).
+
+<Note>
+Meta 0.9.0 includes the native Apps host. Each embedding product must enable
+and qualify its own integration.
+The dated installed-package acceptance below is tied to its exact source and
+artifacts. Deployed HomeCore has native inline preview disabled and unqualified;
+its ordinary screenshot results still display as placeholders. See the
+[current evidence record](https://github.com/lukacf/meerkat-computer/blob/main/VERIFICATION.md).
+</Note>
+
+## Realm configuration and execution bindings
+
+Meerkat owns realm configuration, identity and session execution. Pool profiles,
+resource limits and vault settings remain broker configuration. The standard
+realm MCP field is `tools.mcp_servers`, a list of named registrations. For one
+execution with its own private realm configuration, the registration has this
+shape:
+
+```toml
+[[tools.mcp_servers]]
+name = "computer"
+command = "/absolute/path/meerkat-computer/.venv/bin/python"
+args = [
+  "-m", "meerkat_computer.mcp_adapter",
+  "--broker-url", "http://127.0.0.1:18760",
+  "--binding-file", "/absolute/private/execution/binding.json",
+  "--mcp-apps",
+]
+connect_timeout_secs = 15
+```
+
+Replace the paths with the installed adapter and an existing host-issued binding.
+The binding must be owned by the adapter user with mode 0600. Configuration alone
+does not create or renew a grant, attest an agent identity, or clone a computer.
+
+For a [demand gateway](/operations/host-lifecycle), also supply `--host-token-env`
+and allow for its startup wake. The example's 15-second connection deadline is
+for an already available direct broker; wake the gateway during trusted setup
+or increase the host's connection deadline before starting the adapter.
+
+Use `rkat --realm REALM config get --format json --with-generation` to inspect the
+raw head configuration. `rkat --realm REALM config patch /absolute/patch.json`
+applies a JSON merge patch. A patch to `tools.mcp_servers` replaces the head's
+whole list, so preserve its other entries and use `--expected-generation` when
+updating a concurrently managed configuration. Realm inheritance merges MCP
+registrations by name, with child entries overriding parent entries. An empty
+list does not remove inherited registrations.
+
+Do not put a fixed execution binding in a shared realm or an inherited parent
+configuration. Every session using that registration would receive the same
+grant. In a shared realm, the trusted embedding host resolves the ordinary realm
+configuration, obtains a separate binding for the intended identity/session, and
+registers the adapter on that session with `mcp_add(..., persisted=False)` before
+starting its turn. [examples/run_agent.py](https://github.com/lukacf/meerkat-computer/blob/main/examples/run_agent.py) demonstrates
+that existing attachment path; include `--mcp-apps` in the registered adapter
+arguments when attaching to an Apps-capable host. Forks require their own child
+bindings as described in [full-state forks](/guides/forks).
+
+At Core `195b74ac`, ordinary realm-scoped sessions compose the realm's
+`tools.mcp_servers` with project and user `mcp.toml` registrations. A duplicate
+name with different definitions is a configuration conflict. The CLI also
+supports `rkat --realm REALM mcp add NAME --scope realm ...` and
+`--expected-generation`; this writes the selected realm's own configuration.
+Realm entries are literal and do not expand `${VAR}`. These paths replace the
+older limitation where realm registrations were only persisted.
+
+For MobKit members, select the adapter in the originating member profile's
+`tools.mcp_servers`, or supply it through that member's existing host tool
+provider. A global server registration does not grant every member those tools.
+Declarative member registrations survive in the profile and are recomposed on
+revival. They do not renew a computer grant or make a shared binding safe.
+
+The trusted host must obtain a valid execution binding and reconnect the adapter
+before every resumed or restarted session uses the computer. A session attachment
+with `persisted=False` is not restored automatically. Keep the computer's durable
+identity assignment separate from the expiring control grant. Reconnects use a
+new physical MCP connection, so historical widgets must not be redirected to it;
+a new computer-use invocation can open a view on that connection.
+
+## Native Console host setup
+
+In MobKit's `config/console.toml`, enable the stock Apps host:
+
+```toml
+mcp_apps_sandbox_url = "http://127.0.0.1:5001/sandbox.html"
+```
+
+From the MobKit checkout, run its bundled sandbox proxy on a separate origin:
+
+```bash
+MCP_APPS_HOST_ORIGIN=http://127.0.0.1:5000 MCP_APPS_SANDBOX_PORT=5001 npm --prefix console run mcp-apps:sandbox
+```
+
+The example assumes Console is actually served from `http://127.0.0.1:5000`.
+Set `MCP_APPS_HOST_ORIGIN` to the exact browser-facing Console origin, without
+the `/console` path. The sandbox URL must be reachable by that browser. The proxy
+defaults to a loopback bind; production hosts should serve it through a dedicated
+HTTPS origin without Console cookies or application APIs.
+
+The bundled gateways enable native Apps negotiation when this URL is configured.
+Rust library hosts opt in with `UnifiedRuntime::builder().mcp_apps(true)` and set
+`ConsolePolicy.ui.mcp_apps_sandbox_url`. Factory-owned MCP connections then install
+`meerkat_mcp::apps::McpAppsClientServiceFactory` before connecting.
+
+A host that creates its own external MCP router must select that service factory
+on the router before its initial handshake, using `with_client_service_factory`.
+Enabling Console after that connection has initialized cannot add the negotiated
+UI extension. The adapter also needs `--mcp-apps`; both ends must opt in. Headless
+hosts should omit the capability. In particular, adding the adapter flag to
+[examples/run_agent.py](https://github.com/lukacf/meerkat-computer/blob/main/examples/run_agent.py) alone does not turn that headless
+example into an Apps-capable Console host.
+
+No `customPanels`, `panel_modules`, Console-specific app manifest or renderer
+registration is needed. Developer panels are trusted product frontend code and
+remain outside this package's plugin integration.
+
+## Inline MCP App
+
+Enable the extension on each execution's existing adapter:
+
+```bash
+uv run --locked meerkat-computer-mcp \
+  --broker-url http://127.0.0.1:18760 \
+  --binding-file .state/researcher-binding.json \
+  --mcp-apps
+```
+
+Keep this per-execution binding on the trusted host. The HTML contains no broker
+address, control token, operator token or caller-supplied owner. It calls
+`computer_preview` through the official MCP Apps `App.callServerTool` API. The
+host admits that call through the originating invocation and original connection.
+The adapter reads `GET /v1/preview` with the existing control grant. The broker
+resolves the computer and checks current grant authority under the same store lock
+as the preview read. No computer selector is accepted by that endpoint.
+
+Tools `computer_observe`, `computer_act` and `browser_navigate` declare
+`_meta.ui.resourceUri = "ui://meerkat-computer/preview-v1.html"`. Ordinary computer
+tools declare `visibility: ["model"]`; the read-only `computer_preview` tool
+declares `visibility: ["app"]`. The server lists the latter to an Apps-capable
+host, which must exclude it from the model catalog and enforce app admission.
+The adapter exposes these additions only when opted in and the MCP client
+negotiates the standard Apps MIME capability. Other clients keep their original
+tool catalog and text/image results.
+
+The preview tool returns its frame and status in the UI-only result field
+`_meta["meerkat-computer/preview"]`, with a generic text acknowledgement. The app
+reads only that private field, not `structuredContent` or the original launch
+result. Native MCP Apps retains the complete result for the app while excluding
+UI-only `_meta` from model requests and the public transcript. Ordinary
+computer-use images sent to the agent remain ordinary tool-result images; their
+visibility and forwarding policy are still the embedding product's responsibility.
+
+The resource uses `text/html;profile=mcp-app` and declares empty network,
+resource and nested-frame CSP allowlists. The official SDK and the UI are bundled
+locally, including third-party license notices; there are no CDN dependencies.
+Versioned HTML is package data, not generated model content. Reopening a historical invocation reads the current
+saved preview before displaying any image. It does not replay the original tool
+or trust an old screenshot as current. Expired or replaced grants fail closed.
+Views without live app-tool access show no current preview.
+
+Console rechecks the authenticated viewer and session ownership on every lookup.
+Fresh resource reads and app-tool calls also need `agent.send`, an editable
+Console and the original live MCP connection. A read-only viewer can reopen the
+retained renderer, but this preview intentionally shows no screenshot without a
+fresh `computer_preview` call. A replaced or retired connection cannot supply
+that call under the old invocation. This prevents an old message from silently
+acquiring authority over a newly attached computer.
+
+`computer_preview` is read-only at the broker, but remains an app-tool call for
+native admission, pre- and post-tool hooks, and execution policy. Its read-only
+annotation does not bypass those checks. Each mounted preview schedules another
+poll two seconds after a successful read while its document is visible. This is
+a client request cadence, not a guarantee of native delivery latency. On an error,
+automatic polling stops and the viewer must select **Refresh** to try again.
+Polling can continue after the agent turn completes. The displayed capture
+timestamp and age describe the saved frame, not a continuously captured desktop.
+Multiple mounted previews each poll independently; an offscreen preview in a
+visible document is not suspended.
+
+At Core `195b74ac`, an active model turn can hold app-tool execution until the
+turn finishes, so the first frame or refresh can wait or time out. At that pin,
+each native persistent-session app call also persists the session. These
+limitations describe the older pinned runtime; newer liveness evidence is
+recorded below. Measure the chosen runtime's cost with the actual preview before
+treating reads as inexpensive because broker action counters stay unchanged.
+
+The host owns sandbox serving, viewer access, native tool policy and original
+MCP connection custody. The app requires no computer-specific Console module or
+product HTTP route. The pinned Console profile supports inline rendering,
+resource reads and tool calls. It does not advertise conversation handoff,
+model-context updates, external links or downloads. Disabling the sandbox URL
+also disables Console's Apps HTTP operations.
+
+The interoperability contract is the official
+[MCP Apps specification](https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx),
+including its [app-only polling pattern](https://apps.extensions.modelcontextprotocol.io/api/documents/patterns.html).
+
+## Build and verification
+
+```bash
+make ui-build       # Install locked JS dependencies and rebuild packaged HTML
+make ui-check       # Check bundle freshness without changing files
+make test-python    # Includes MCP wire tests, no cloud
+make worker-browser # Install the matching Chromium before browser tests
+uv run --locked --group dev pytest tests/python/test_mcp_app_ui.py tests/python/test_preview_ui.py -m browser
+RUST_LANE_ID=console-preview ./scripts/repo-cargo test --locked --test preview
+```
+
+The browser tests use real Chromium and a deterministic Apps protocol host. The
+MCP adapter tests use the real Python SDK lifecycle. These tests establish this
+package's wire, rendering and privacy behavior. They do not establish native
+Console policy enforcement, concurrent app-tool delivery or deployed HomeCore
+integration. Those require separate acceptance with the packaged adapter, the
+chosen upstream build, real host authorization and session restart handling.
+
+### Installed package in native Console
+
+The [native acceptance runbook](https://github.com/lukacf/meerkat-computer/blob/main/tests/native-console/README.md)
+provides the complete commands and required inputs. Use
+`make native-console-prepare` to stage the pinned Console source,
+`make native-console-build` to explicitly build both fixtures and issue a build
+receipt, then `make smoke-native-console` with that receipt, the matching wheel
+and both binary paths. The smoke target does not build Rust.
+
+The harness selects released Meta 0.9.0 at
+`b275e0ed4fe61cf4ff43d16691c54efb17812919` and exact Core 0.9.0 registry
+dependencies. The matching Core release commit is
+`a00bafaf1d862fb41112ff1f30312b350ad05246`. Use fresh input
+and evidence directories; source, binary or wheel drift requires renewed inputs.
+The runbook uses `--poll-seconds 66` and asserts a completed poll for each widget
+after 60 seconds. Its default eight-second smoke does not establish that longer
+liveness claim. It waits for native completion before checking reload behavior.
+
+This is a local process fixture using the installed Computer adapter and stock
+Console. The 2026-10-10 candidate passed the 66-second lane with two views.
+Reload reused the original invocations and saved observation, private preview
+data stayed out of later model requests, and revoking the grant cleared both
+images. See the exact inputs, timing and retained evidence in
+[VERIFICATION.md](https://github.com/lukacf/meerkat-computer/blob/main/VERIFICATION.md).
+This does not qualify a different Computer candidate, VM isolation or deployed
+HomeCore.
+
+The historical native host had a brief publication interval after turn completion
+when an original invocation can return 403 before it becomes resolvable again.
+The harness retains that response and waits for availability before testing
+reload. A user reloading in that interval may see a fallback view. This upstream
+timing limitation is reported separately from Computer's package acceptance.
+
+## Pinned upstream contracts
+
+The current integration uses released [Core 0.9.0](https://github.com/lukacf/meerkat/releases/tag/v0.9.0)
+and [Meta 0.9.0](https://github.com/lukacf/meerkat-meta/releases/tag/v0.9.0).
+The native acceptance fixture compiles inside the exact released Meta checkout;
+its identity context retains Meta's owning public runtime handle. It uses
+`meta/` RPC names and the `meerkat-meta` crate. No upstream source patch is applied.
+
+- [Released Console guide](https://github.com/lukacf/meerkat-meta/blob/b275e0ed4fe61cf4ff43d16691c54efb17812919/docs/guides/console.mdx): host configuration, admission, replay and supported capabilities.
+- [Bundled sandbox proxy](https://github.com/lukacf/meerkat-meta/blob/b275e0ed4fe61cf4ff43d16691c54efb17812919/console/mcp-apps-sandbox.cjs): origin allowlist, loopback default and CSP construction.
+- [Native Apps HTTP host](https://github.com/lukacf/meerkat-meta/blob/b275e0ed4fe61cf4ff43d16691c54efb17812919/crates/meerkat-meta/src/http_console/mcp_apps.rs): authenticated native App operations.
+- [Core realm MCP configuration](https://github.com/lukacf/meerkat/blob/a00bafaf1d862fb41112ff1f30312b350ad05246/crates/meerkat-core/src/mcp_config.rs): ordinary realm registrations.
+- [Member profile attachment](https://github.com/lukacf/meerkat/blob/a00bafaf1d862fb41112ff1f30312b350ad05246/crates/meerkat-mob/src/build.rs): durable profile MCP registrations.
+- [Apps client factory](https://github.com/lukacf/meerkat/blob/a00bafaf1d862fb41112ff1f30312b350ad05246/crates/meerkat-mcp/src/apps.rs): native UI extension negotiation.
+
+Earlier pre-release pins and their results remain in the dated verification
+record. They do not qualify another package version or the deployed HomeCore
+consumer.

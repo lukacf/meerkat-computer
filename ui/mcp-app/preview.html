@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>My Computer</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui,sans-serif; }
+    body { margin: 0; color: var(--color-text-primary,light-dark(#20242a,#e5e7eb)); background: var(--color-background-primary,light-dark(#fff,#171a20)); }
+    main { padding: 14px; }
+    header { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 12px; }
+    h1 { font-size: 15px; margin: 0 auto 0 0; }
+    label, button, p { font-size: 12px; }
+    label { display: flex; gap: 5px; align-items: center; }
+    button { border: 1px solid light-dark(#d9dce2,#4a4d54); border-radius: 7px; padding: 6px 12px; background: transparent; color: inherit; cursor: pointer; }
+    button:disabled { opacity: .45; cursor: default; }
+    .capture { border: 1px solid light-dark(#e2e5eb,#3b404a); border-radius: 9px; overflow: hidden; min-height: 100px; display: grid; place-items: center; background: light-dark(#f5f7fa,#101318); }
+    img { display: block; max-width: 100%; max-height: 620px; object-fit: contain; }
+    .capture p { padding: 18px; text-align: center; }
+    p { line-height: 1.5; margin: 10px 0 0; }
+    #age { opacity: .72; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1 id="label">My Computer</h1>
+      <label><input type="checkbox" id="show-label" checked>Show label</label>
+      <button id="refresh" type="button" disabled>Refresh</button>
+    </header>
+    <div class="capture">
+      <img id="image" alt="Agent screenshot" hidden>
+      <p id="placeholder">Waiting for a current agent screenshot.</p>
+    </div>
+    <p id="status" role="status">Connecting...</p>
+    <p id="age">Only agent activity produces new screenshots.</p>
+  </main>
+  <!-- APP_SCRIPT -->
+</body>
+</html>

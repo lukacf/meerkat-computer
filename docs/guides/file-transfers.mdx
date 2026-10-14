@@ -1,0 +1,128 @@
+---
+title: "Upload and download files"
+description: "Share files with an agent's guest, collect its outputs, and use website file inputs."
+icon: "file-arrow-up"
+---
+
+There are two boundaries. **Host transfers** move bytes between your application
+and an agent's guest through private broker storage. **Website transfers** move
+bytes between that guest and a website through its browser. A file downloaded
+from a website stays in the guest until an explicit host export.
+
+## Enable the directions you need
+
+Add `file_import` and/or `file_export` to the chosen broker profile's
+`capabilities`. Existing profiles do not acquire these permissions automatically.
+The trusted application selects that profile when attaching its realm identity.
+
+~~~toml
+# Inside your existing [profiles.coder] section:
+capabilities = ["browser", "screenshots", "browser_semantics", "exec", "files", "file_import", "file_export"]
+
+[profiles.coder.transfers]
+max_file_bytes = 16777216
+max_stored_bytes = 134217728
+~~~
+
+The defaults are 16 MiB per file and 128 MiB stored per computer. You can lower
+the file limit; 16 MiB is the V1 ceiling. Broker storage also limits file count.
+Profiles are immutable for an existing computer, so use a new environment when
+changing its permissions. See [configuration](/reference/configuration).
+
+These switches control the host boundary. They do not block a guest with browser
+or shell access from sending its own files to a website. Existing application
+approval policies still apply; no mandatory per-click approval is introduced.
+An R2 risk label does not itself create or satisfy an approval hold.
+
+## Give the agent a file
+
+As the trusted operator, stage one file for the intended computer:
+
+~~~bash
+rkat-computer files --computer-id COMPUTER_ID stage --file ./brief.pdf
+~~~
+
+The command returns an opaque `file_id`, filename, size and SHA-256. Give the
+agent that ID, or let it discover the shared file with `computer_files`.
+Its tool call imports the file into its guest:
+
+~~~json
+{"file_id":"HOST_RETURNED_FILE_ID","path":"brief.pdf"}
+~~~
+
+Send that to `computer_upload`. The path is relative to the guest workspace,
+normally `/workspace`; an absolute **guest** path is also accepted. Parent
+directories must already exist. Existing files are preserved unless the call
+explicitly sets `overwrite: true`. Imports publish a complete file atomically.
+
+Only the host's staging operation accepts a host filesystem path. Agent tools
+cannot select an arbitrary host path, owner, URL or another computer's file ID.
+
+## Collect the agent's output
+
+The agent calls `computer_download`:
+
+~~~json
+{"path":"/workspace/report.pdf","filename":"report.pdf"}
+~~~
+
+This creates a private export and returns its `file_id`, size and SHA-256.
+The operator can then save it to a new host file:
+
+~~~bash
+rkat-computer files --computer-id COMPUTER_ID get --file-id FILE_ID --output ./report.pdf
+~~~
+
+The CLI verifies length and SHA-256 before writing. It refuses to overwrite an
+existing output. It never extracts archives or opens the downloaded file.
+Raw file bytes are absent from MCP messages and action receipts.
+
+List or remove staged files when finished:
+
+~~~bash
+rkat-computer files --computer-id COMPUTER_ID list
+rkat-computer files --computer-id COMPUTER_ID delete --file-id FILE_ID
+~~~
+
+Broker files survive grant changes and broker restarts, bound to their original
+computer. They are not copied to another computer during a fork. Delete unused
+inputs and collected outputs to reclaim the storage quota. The worker's temporary
+transport blobs are separate: imports consume them, successful exports are
+cleaned up, and a new lease cannot use the old lease's blobs.
+
+## Use a website's upload control
+
+Observe the browser, find the file-input `ref`, then call `browser_upload`:
+
+~~~json
+{"observation_id":"CURRENT_OBSERVATION_ID","ref":"CURRENT_FILE_INPUT_REF","paths":["/workspace/report.pdf"]}
+~~~
+
+This requires browser semantics and a current observed file input. It accepts
+1-16 absolute guest file paths, at most 16 MiB combined. It snapshots regular
+file bytes and checks the UI target again before setting the file input. Changed
+targets, symlinks, devices and directories are rejected. A website may submit
+immediately when files are selected, so this is an effectful action.
+
+Downloads triggered by normal browser actions continue to be saved in the guest.
+`browser_downloads` takes `{}` and lists recent completed downloads and pending
+download count. The recent list is scoped to the running browser; the files
+themselves survive restarts. Ordinary browser observations also report the guest
+download directory. Export a chosen path with `computer_download` only when it
+should cross back to the host.
+
+## Embed in an application
+
+The trusted Python `ComputerClient` exposes `stage_file`, `list_files`,
+`download_file` and `delete_file` using the operator credential. Stage takes
+explicit bytes; download returns verified bytes so the host controls where they
+are saved. The agent continues to use the normal grant-authenticated tool calls.
+The [HTTP API](/reference/http-api#file-staging) supports the same operations.
+
+For a product that requires approval, request it for the exact transfer using
+that product's existing policy. Do not pass an `approved` argument or an
+operator credential through a model tool. Sensitive-information provenance and
+probabilistic action review remain [future research](/development/future-action-review).
+
+Never automatically retry an uncertain import, website upload or export. The
+saved action ID identifies the original attempt; a new ID would be a new action.

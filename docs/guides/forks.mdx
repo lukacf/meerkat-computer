@@ -1,0 +1,120 @@
+---
+title: "Fork a running computer"
+description: "Copy one VM checkpoint into independent children with disk and RAM state."
+icon: "code-fork"
+---
+
+A delegate attaches an independently provisioned computer. A full-state fork
+starts from a running parent's RAM, CPU/device checkpoint and writable disks.
+Open apps, unsaved documents and browser JavaScript state are preserved. The
+parent and children then run independently. A council uses one request with
+multiple targets, so every participant starts from the same checkpoint.
+
+This is an explicit trusted-host operation. Meerkat and MobKit continue to own
+agent forks, sessions and identities. Their fork operation does not automatically
+call this broker. The embedding application must perform the sequence below;
+no upstream runtime changes are required.
+
+## Host integration
+
+1. Resolve the parent computer and its current lease from the host's binding.
+   Resolve all child identities through the application's identity authority.
+2. Send one `POST /v1/forks` with the operator credential. Use a fresh UUID for
+   `request_id`; retain it before sending. Populate
+   [examples/full-state-fork.json](https://github.com/lukacf/meerkat-computer/blob/main/examples/full-state-fork.json) with real values.
+3. Require `phase == "completed"` before starting the council. The response
+   contains ordered `children`, `ready_children`, timestamps and a safe error.
+   It contains no control credentials.
+4. Attach each target through `POST /v1/attachments`, using its own session,
+   generation and owner/slot. Use the same profile as the parent. Save each new
+   binding privately and configure that child's MCP adapter with it.
+5. Start the child agent only after its new binding is installed. Tell it to
+   observe first: old screenshot, DOM and accessibility references are invalid.
+
+```bash
+./scripts/repo-cargo run -- fork --request .state/fork-request.json
+./scripts/repo-cargo run -- fork-status --request-id REQUEST_UUID
+```
+
+Rust embedders use `Broker::fork`, `Broker::fork_status` and `Broker::attach`.
+The HTTP adapter keeps the fork task alive after a client disconnect. A direct
+Rust future can be cancelled; repeating the same request then records the
+abandoned operation as unknown without replaying its effects.
+
+Targets must have distinct, unused owner/slot pairs in the parent's realm.
+There are 1-16 targets per request; normal pool memory and running-guest admission
+still apply. Targets inherit the immutable resource/capability profile. The
+parent's current lease is checked after preflight, and its computer-operation
+lock forms a barrier during capture and restoration. Other computers remain
+usable. Unresolved ordinary or private-input effects prevent a fork.
+
+## What changes in a child
+
+The backend preserves the internal Incus instance name and uses a distinct,
+compact `mcf-<computer-id>` project for each child. The complete QEMU control
+socket path is checked against Linux's length limit before creating resources.
+Incus gives the child a new infrastructure incarnation.
+Each branch has an isolated bridge and subnet, a new worker token, a new broker
+computer/ownership ID and new execution grants. Guest admin access remains
+confined to that computer. Operator access resolves the exact project, instance
+name and incarnation.
+
+Before capture, a private Unix-socket command closes the worker's control gate.
+The checkpoint therefore contains a closed gate. The parent is reopened after
+capture. A child starts behind egress quarantine, rotates its token through the
+private socket, clears inherited leases, actions, metrics and observations, and
+receives persistent network configuration before normal egress is enabled.
+Browser and native app processes stay running. The secure-input privacy guard
+survives, so a copied secret field does not become visible through observations.
+
+Browser cookies, already loaded secrets and application login state are part of
+the requested full computer copy. Vault assignments are not copied. The host
+must separately assign credentials if a child needs future vault delivery.
+Network connections to external services cannot be cloned as an independent
+remote session; applications may need to reconnect.
+
+## Requirements and limits
+
+- Incus VM backend, with `migration.stateful=true`, sufficient state-disk space
+  and a worker supporting the private fork protocol. Newly created VMs receive
+  the stateful configuration. Older VMs/images fail capability preflight until
+  explicitly upgraded by the operator.
+- Container requests and incompatible VM devices/backends fail explicitly.
+  There is no disk-only fallback and no cold-boot fallback after restore fails.
+- The checkpoint remains on the same Incus host. This does not provide portable
+  cross-host checkpoints or shared copy-on-write RAM. Plan memory for each
+  running child; storage sharing depends on the configured Incus storage backend.
+- Guest/application state is copied at the checkpoint. Infrastructure identity,
+  control authority and network configuration deliberately change afterward.
+
+## Failure and recovery
+
+The request and every child identity are durably reserved before capture.
+Receipts and progress are persisted before moving to the next effect. A repeated
+request UUID returns its existing result; changed inputs with that UUID fail.
+Broker restart turns unfinished forks into `unknown` and invalidates grants.
+
+A partially completed request reports its confirmed `ready_children` prefix.
+Unconfirmed children cannot attach, including after they are stopped. An
+attachment cannot silently provision a fresh computer in their place.
+
+If capture failed while the source gate was closed, the operator can explicitly
+restore source control without retrying capture or any child restore:
+
+```bash
+./scripts/repo-cargo run -- fork-resume-source --request-id REQUEST_UUID
+```
+
+This leaves the fork result unknown. Inspect it using `fork-status` and the
+broker's private persisted backend handles. `stop` stops an owned guest and
+revokes its grant; it retains disks, projects and bridges. Stopping ends the
+running RAM state, and a later start boots normally. Restored branch VMs receive
+one guest-agent OS power-off request, followed by observation of the exact
+incarnation until Incus confirms it is stopped. A lost acknowledgement does not
+trigger another power-off request or a force-stop fallback. Failed partial forks
+can also leave owned empty projects, networks or a checkpoint for inspection.
+Their removal is an explicit operator maintenance action, never an automatic
+retry of a failed fork. A new experiment uses new target slots and a new request
+UUID after the previous resources have been accounted for.
+
+See [historical verification record](https://github.com/lukacf/meerkat-computer/blob/main/VERIFICATION.md) for measured qualification results.

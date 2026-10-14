@@ -1,0 +1,19 @@
+[Unit]
+Description=Meerkat Computer identity-owned computer broker
+After=network-online.target incus.service
+Wants=network-online.target
+[Service]
+Type=simple
+User=meerkat-computer-broker
+Group=meerkat-computer-broker
+SupplementaryGroups=incus-admin
+WorkingDirectory=/var/lib/meerkat-computer-broker
+EnvironmentFile=/etc/meerkat-computer/operator.env
+ExecStart=/usr/local/bin/rkat-computer serve --config /etc/meerkat-computer/config.toml
+Restart=on-failure
+RestartSec=2
+UMask=0077
+CPUAccounting=true
+MemoryAccounting=true
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,93 @@
+---
+title: "Verification and qualification"
+description: "Choose the check that can establish the claim you need."
+icon: "check-double"
+---
+
+A green unit suite is not a live infrastructure result. Every qualification must
+identify its source revision, image, backend, workload and retained evidence.
+
+| Lane | Command | Establishes |
+| --- | --- | --- |
+| Offline contract tests | `make test` | Library and Python behavior with no cloud credentials |
+| Static checks | `make lint` | Formatting, Rust Clippy and Python Ruff |
+| Browser installation | `make worker-browser` | Installs the locked Chromium dependency |
+| Real local browser | `make smoke` | Browser, operator UI and local fixtures |
+| Broker/worker/MCP stack | `make smoke-stack` | Real protocol composition with a process test backend |
+| Linux native desktop | `make smoke-desktop` | Apps, AT-SPI and input in an isolated Docker image |
+| PDF viewer | `make smoke-pdf` | Evince page navigation, native accessibility, screenshots and Poppler utilities |
+| Desktop broker stack | `make smoke-desktop-stack` | Rust broker plus the Linux desktop path |
+| Guest administration | `make smoke-desktop-admin` | Production sudo bootstrap in a disposable guest |
+| Documentation | `make docs-check` | MDX, navigation, links and documented structure |
+| Installed package | `make package-check` | Reproducible wheel/sdist and real installed MCP adapter contract |
+| Installed native Console | `make smoke-native-console` with runbook arguments | Packaged adapter through the pinned native host, with separate preparation and build |
+| Local release checks | `make release-check` | Combined local lanes, including browser, stack, docs and packaging |
+
+Docker desktop lanes require a local Docker daemon. Process/Docker fixtures do
+not establish Incus networking or cloud isolation. Tests use synthetic data and
+do not log in to real external accounts.
+
+Native Console acceptance is an explicit lane outside `make release-check`.
+Follow the [native acceptance runbook](https://github.com/lukacf/meerkat-computer/blob/main/tests/native-console/README.md)
+for `make native-console-prepare`, `make native-console-build` and the smoke
+arguments. Its 66-second run checks polling beyond 60 seconds with the exact
+wheel, binaries and source receipt; a shorter smoke is a different qualification.
+The 2026-10-14 candidate passed with released Core/SDK/Meta 0.9.0 and the exact
+installed wheel: two previews, 67.118 seconds of polling, reload without replay,
+revocation and private-context checks. Linux desktop/PDF/admin checks and a real
+Astra PDF-summary/export task also passed; the actual checked-in SDK example
+exited successfully. Exact hashes, source mappings, telemetry and the released
+SDK history-parser limitation are recorded in
+[VERIFICATION.md](https://github.com/lukacf/meerkat-computer/blob/main/VERIFICATION.md).
+Repeat affected lanes when their inputs change. A historical receipt does not
+qualify a different wheel, source fingerprint or consumer build.
+
+## Qualify an actual pool
+
+Run the live controller against a dedicated prepared profile:
+
+~~~bash
+uv run --locked python scripts/live_qualification.py \
+  --broker-url http://127.0.0.1:18760 --profile desktop \
+  --guest-kind virtual-machine --concurrency 2 --repeats 2 \
+  --operator-token-file /private/operator.token \
+  --report-dir .state/qualification-vm --apply
+~~~
+
+Omitting `--apply` prints a plan without reading the credential or contacting the
+broker. Use a fresh report directory. The operator token file must be owned by
+the controller user and mode 0600.
+
+Qualify containers and VMs separately. Isolation probes need explicit host
+listeners and positive controls; a skipped probe is not an isolation pass.
+The separate operator controller requires an exclusive broker and special idle
+settings. Follow its exact prerequisites in the
+[infrastructure guide](https://github.com/lukacf/meerkat-computer/blob/main/infra/README.md#live-qualification).
+
+## Keep outcomes separate
+
+- Task success comes from an independent evaluator.
+- Model usage comes from Meerkat/provider accounting.
+- Guest counters measure observed guest operations.
+- Infrastructure receipts establish lifecycle and cleanup.
+- Integrity evidence establishes what routes the agent used.
+
+An agent with guest root can tamper with guest logs. Collect benchmark requests
+and evaluator truth outside the guest when integrity matters.
+
+## Retained results
+
+[VERIFICATION.md](https://github.com/lukacf/meerkat-computer/blob/main/VERIFICATION.md)
+is the detailed historical qualification record. It names the tested revisions
+and limits of each result. Do not interpret an earlier pass as qualification of
+new code or a different deployment.
+
+The 2026-10-12 HomeCore wake/idle result qualifies that lifecycle path only.
+Deployed HomeCore native inline preview is disabled and unqualified; its existing
+Console still shows ordinary screenshot results as placeholders. Pool lifecycle,
+model image delivery and human-facing image rendering need separate evidence.
+
+The generic native Console liveness fixture is documented in
+[Console integration](/integrations/console#pinned-upstream-contracts).
+Packaged Computer acceptance and deployed HomeCore acceptance require their own
+evidence; they are not implied by that fixture.

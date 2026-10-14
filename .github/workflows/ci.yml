@@ -1,0 +1,111 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  rust-stack:
+    # Public jobs always use disposable hosted runners; private CI keeps warm caches.
+    # Remove repository runner registrations before changing repository visibility.
+    runs-on: ${{ fromJSON(github.event.repository.private && (vars.MEERKAT_COMPUTER_RUST_RUNNER || '["self-hosted","Linux","X64","meerkat-computer-rust"]') || '"ubuntu-24.04"') }}
+    timeout-minutes: 20
+    env:
+      RUST_LANE_ID: ci
+      CARGO_BUILD_JOBS: "4"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.94.1"
+          components: rustfmt, clippy
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.9"
+          python-version: "3.11.13"
+          enable-cache: true
+      - name: Resolve authoritative Cargo cache paths
+        run: ./scripts/repo-cargo --print-env | sed -n '/^CARGO_HOME=/p;/^CARGO_TARGET_DIR=/p' >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.CARGO_HOME }}/registry
+            ${{ env.CARGO_HOME }}/git
+            ${{ env.CARGO_TARGET_DIR }}
+          key: rust-${{ runner.os }}-1.94.1-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
+          restore-keys: rust-${{ runner.os }}-1.94.1-${{ hashFiles('Cargo.lock') }}-
+      - run: make check test-rust lint-rust
+      - run: uv sync --locked --group dev
+      - run: uv run --locked python scripts/install_ci_chromium.py
+      - run: make smoke-stack
+  python:
+    runs-on: ${{ fromJSON(github.event.repository.private && (vars.MEERKAT_COMPUTER_RUNNER || '["self-hosted","Linux","X64","meerkat-computer"]') || '"ubuntu-24.04"') }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11.13", "3.13.7"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.9"
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+      - run: make test-python lint-python
+      - run: make package-check PACKAGE_OUTPUT=.state/ci-package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-package-${{ matrix.python }}
+          path: .state/ci-package
+          include-hidden-files: true
+          if-no-files-found: error
+  browser-and-docs:
+    runs-on: ${{ fromJSON(github.event.repository.private && (vars.MEERKAT_COMPUTER_RUNNER || '["self-hosted","Linux","X64","meerkat-computer"]') || '"ubuntu-24.04"') }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            ui/mcp-app/package-lock.json
+            docs/package-lock.json
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.9"
+          python-version: "3.11.13"
+          enable-cache: true
+      - run: make ui-check docs-check
+      - run: node tests/native-console/browser.cjs --self-test
+      - run: uv run --locked python scripts/install_ci_chromium.py
+      - run: make smoke
+  gate:
+    if: always()
+    needs: [rust-stack, python, browser-and-docs]
+    runs-on: ${{ fromJSON(github.event.repository.private && (vars.MEERKAT_COMPUTER_RUNNER || '["self-hosted","Linux","X64","meerkat-computer"]') || '"ubuntu-24.04"') }}
+    timeout-minutes: 2
+    steps:
+      - name: Require every validation lane
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          results = json.loads(os.environ["RESULTS"])
+          failed = [name for name, value in results.items() if value["result"] != "success"]
+          if failed:
+              raise SystemExit("Required lanes did not pass: " + ", ".join(failed))
+          PY

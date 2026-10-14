@@ -1,0 +1,54 @@
+---
+title: "Ownership and grants"
+description: "Separate the durable computer assignment from the execution allowed to control it."
+icon: "fingerprint"
+---
+
+A computer is identified by **owner + slot**. An identity owner contains a realm,
+namespace and canonical identity. A session owner contains a realm and session ID.
+
+~~~json
+{"kind":"identity","realm":"research","namespace":"agents","identity":"discovery"}
+~~~
+
+~~~json
+{"kind":"session","realm":"research","session_id":"session-123"}
+~~~
+
+A slot such as `main` or `design` gives one owner distinct environments. A profile
+selects the environment's image, resources and capabilities; it does not identify
+the agent. Models and runtime generations are not durable owners.
+
+## Control belongs to one execution
+
+An attachment binds a computer to a current session and runtime generation.
+The broker issues an expiring grant containing an epoch and opaque token. Only
+one grant is current. Takeover is explicit and fences the prior controller.
+
+| Event | Computer and disk | Control |
+| --- | --- | --- |
+| New session or model for the same identity | Reused | Host attaches the current execution |
+| Release | Retained; eligible for idle cleanup | Revoked |
+| Stop | Disk retained; running processes end | Revoked |
+| Broker restart | Assignment retained | Old grants invalidated |
+| Agent identity reset | Unchanged by this package | Host must decide its attachment policy |
+| Different owner or slot | Separate computer | Separate grant |
+| Explicit VM fork | State copied into reserved child computers | New child bindings required |
+
+A fixed binding in a shared realm or inherited member profile gives all of those
+executions the same credential. Instead, the trusted host resolves each owner,
+attaches its session, and supplies the resulting binding to that execution.
+
+## Immutable environments
+
+A computer retains the profile it was created with. Changing image, resources,
+observation settings or guest-administrator rights under the same profile name
+does not silently upgrade it. An incompatible attachment is refused.
+Use a new slot for a new environment, then migrate wanted artifacts deliberately.
+
+Session-owned computers can request one-time operator input, but they do not
+inherit identity-assigned website credentials. Full-state VM forks copy existing
+guest login state; they do not copy vault assignments.
+
+See [configuration](/reference/configuration), [credentials](/guides/credentials)
+and [forks](/guides/forks) for the corresponding contracts.

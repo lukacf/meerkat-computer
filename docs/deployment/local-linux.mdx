@@ -1,0 +1,101 @@
+---
+title: "Install on a Linux server"
+description: "Prepare an owned Incus pool and run the broker beside it."
+icon: "server"
+---
+
+Use a dedicated Ubuntu 24.04 host with Python 3.11 or newer, `uv`, and `rustup`.
+The checkout selects Rust 1.94.1 through `rust-toolchain.toml`. Containers use
+the host kernel; VMs additionally require a usable `/dev/kvm`.
+
+The broker and Incus run on the same host. Controllers can connect through SSH
+forwarding. A new host needs live qualification before it becomes production capacity.
+
+## Prepare source and host
+
+Clone `https://github.com/lukacf/meerkat-computer.git` onto the host, or transfer
+a source archive without `.state`, credentials, `.venv` or benchmark data.
+The complete source archive supports the same build commands without `.git`.
+Run the following commands from that source directory. The host installer supplies
+Incus and native build prerequisites; it does not install `uv` or Rust.
+
+~~~bash
+sudo bash infra/install-host.sh --apply
+uv sync --locked
+sudo python3 infra/host-setup.py \
+  --project meerkat-computer \
+  --storage-gib 100 \
+  --apply
+~~~
+
+Omit `--apply` to inspect the plan first. Host setup creates a dedicated Incus
+project, Btrfs loop-backed pool, private IPv4 NAT bridge and guest filtering.
+It saves ownership intent and refuses foreign resource collisions.
+
+The Rust build fetches the pinned Meerkat machine crates from the public
+upstream repository over HTTPS. No repository credentials belong in an image
+or guest.
+
+The default bridge is `10.211.0.1/24`. Choose a non-overlapping range with
+`--address`, and keep free host disk outside the loop-backed pool. Existing
+operator-provisioned storage requires deliberate integration and qualification.
+
+## Build an image
+
+~~~bash
+sudo python3 infra/build-image.py \
+  --project meerkat-computer \
+  --name mc-browser-v1 \
+  --state .state/browser-image.json \
+  --apply
+~~~
+
+Keep its state file. The builder is retained for inspection, and the output gives
+the immutable image fingerprint. See [images](/deployment/images) for desktop
+and VM variants.
+
+## Configure and install the broker
+
+Copy `configs/local.toml` to a private configuration and replace every selected
+profile's image placeholder. Start with one or two running computers and raise
+capacity only after qualification.
+
+~~~bash
+make build
+./scripts/repo-cargo run -- validate --config /absolute/private/computer.toml
+./scripts/repo-cargo --print-env
+~~~
+
+Use the printed `CARGO_TARGET_DIR/debug/rkat-computer` as the binary path:
+
+~~~bash
+sudo bash infra/install-broker.sh \
+  /absolute/path/to/rkat-computer \
+  /absolute/private/computer.toml \
+  --apply
+~~~
+
+The installer creates a private operator environment once and preserves it on
+reinstall. Reinstallation restarts the broker and checks its loopback health.
+A health response is not a complete guest-start test.
+
+<Warning>
+The broker account has Incus administration access. Keep its credentials and state
+outside guests. Run one broker per pool and never start cloned copies of its state.
+</Warning>
+
+## Reach it from your controller
+
+~~~bash
+ssh -N -L 18760:127.0.0.1:18760 your-linux-host
+~~~
+
+Load the operator credential privately in the controller, then continue with
+[the first attachment](/quickstart). No worker port needs to be exposed.
+
+## Qualify and maintain
+
+Follow [verification](/development/verification) for explicit live tests, and
+[operating a pool](/operations/lifecycle) for restart and backup behavior.
+The [infrastructure implementation guide](https://github.com/lukacf/meerkat-computer/blob/main/infra/README.md)
+contains the exact networking, AppArmor, service and image-builder details.

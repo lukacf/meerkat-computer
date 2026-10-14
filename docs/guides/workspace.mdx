@@ -1,0 +1,48 @@
+---
+title: "Shell and files"
+description: "Create artifacts and run programs inside the assigned guest."
+icon: "terminal"
+---
+
+The `files` capability exposes workspace read/write tools. The `exec` capability
+exposes a guest shell. They are independent permissions.
+
+~~~json
+{"path":"notes.txt","text":"A persistent note for this identity.\n"}
+~~~
+
+Send that to `workspace_write`; `workspace_read` reads the same path. Paths are
+constrained to the configured workspace, normally `/workspace`. File content is
+UTF-8 text, and writes accept at most 1,048,576 UTF-8 bytes. Parent directories
+must already exist. File tools do not create directory trees.
+
+~~~json
+{"command":"python3 --version","timeout_seconds":30}
+~~~
+
+`workspace_exec` defaults to 30 seconds and accepts 1-120 seconds. Output is
+bounded. The result includes command outcome and tool metrics; check them before
+assuming success.
+
+## Full guest access is a deliberate choice
+
+Shell access is not a filesystem sandbox. It runs as the worker's Unix user and
+can access that user's files outside `/workspace`. If the profile also enables
+`guest_admin = true`, use `sudo -n` for administration within that guest.
+
+Do not mount the host filesystem, Incus socket or operator credentials into the
+computer. Root inside a guest is a different authority from root on its host.
+See [security](/operations/security).
+
+In a desktop image, workspace processes inherit the connection environment needed
+to open apps on the guest display. They do not inherit model-provider credentials.
+
+## Persistence and errors
+
+Workspace and browser data survive release and a cold restart. Running processes
+do not survive a normal stop. [Full-state forks](/guides/forks) are a separate,
+explicit VM operation.
+
+Never repeat a shell command or write just because its transport timed out.
+An `unknown_effect` result means the previous request may have changed the guest.
+Inspect independent state or receipts before deciding what follows.

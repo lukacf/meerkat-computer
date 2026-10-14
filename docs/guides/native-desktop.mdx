@@ -1,0 +1,83 @@
+---
+title: "Use native applications"
+description: "Combine OS accessibility, screenshots and input in a private Linux desktop."
+icon: "windows"
+---
+
+Build a desktop image and select a profile with `desktop`. Each computer has its
+own X11 display, D-Bus session and AT-SPI accessibility tree. Native apps and the
+headed browser share that desktop.
+
+## Discover and launch
+
+Call `computer_apps` with `{"action":"list"}`. It returns installed visible XDG
+applications. Launch an exact returned `app_id`; paths and arbitrary shell commands
+are not app IDs.
+
+A `launch_submitted` result confirms submission. Observe the desktop until the
+application is ready before using its controls.
+
+## Work with accessibility
+
+Call `computer_observe` with `{"surface":"desktop"}`. Observations describe
+applications, windows and bounded elements with roles, states, text, bounds and
+advertised actions.
+
+| Need | Action |
+| --- | --- |
+| Focus an editable control | `focus` with a current ref |
+| Replace native text | `fill` with ref and text |
+| Activate an exposed native action | `invoke` with ref and exact observed `action_name` |
+| Interact with a canvas or custom control | Click, drag, scroll or key input |
+| Inspect the visible result | Fresh desktop observation |
+
+Desktop coordinates are screen pixels, including window decorations and native
+dialogs. Ref-based input checks the current native target and owning window.
+Applications can still change asynchronously; this is not an atomic desktop transaction.
+
+## Choose the right channel
+
+AT-SPI coverage depends on the application. Availability, partial coverage and
+truncation are reported explicitly. A canvas may have few useful semantics while
+still working through screenshots and input. Use programming interfaces for
+structured work when the application has one.
+
+If accessibility keeps changing during a hybrid observation, the worker returns
+a fresh screenshot with `accessibility.status: "partial"` and the issue
+`unstable_tree`. It omits semantic elements and refs from that observation.
+Use the image to inspect the app; a later stable observation restores refs.
+
+Fallback observations report `input.status`. `requires_revalidation` allows
+coordinate or keyboard input only after the focused window's pixels, geometry,
+focus and accessibility event state are checked again. Coordinates and both
+drag endpoints must stay inside that window; scrolling needs explicit coordinates.
+`observe_only` means the screenshot cannot authorize input. Observe again or
+use another permitted tool. Semantic-only profiles never fall back to screenshots.
+
+Visual fallback compares the focused window's pixels exactly. A cosmetic redraw
+can therefore reject input even when the observation ID is current. A rejection
+with effect `none` means no input was submitted; inspect a new observation before
+choosing the next action. This check does not make an asynchronous desktop atomic.
+The provided guest session sets `GTK_OVERLAY_SCROLLING=0` so supported GTK apps
+use stationary scrollbars. This removes overlay scrollbar fading in those apps
+while preserving input validation. Other animations can still invalidate visual input.
+Existing guest sessions need the updated launcher and a desktop restart to use
+this default; the host desktop is unaffected.
+
+Pre-admission `computer_act` rejections report `ui_input_rejections` and bounded
+`stale_input_*` reason counters in receipt metrics. They distinguish changed
+pixels, window topology, focus, display, accessibility state and stale targets.
+Reasons describe the first failing validation stage, without recording window
+titles, text, coordinates or screenshots. Rejected requests are separate from
+`ui_command_attempts` (dispatch) and `ui_commands` (acknowledgement). Guest shell
+commands remain `exec_commands`; arbitrary shell-driven UI effects cannot be
+reconstructed from those counters.
+
+The full bundle contains Blender, Inkscape, GIMP, LibreOffice Writer/Calc/Impress,
+Mousepad and Thunar. The minimal bundle keeps Mousepad and Thunar. Both bundles
+include [Evince and Poppler utilities](/guides/pdf) for viewing and inspecting
+PDFs. Installed apps are not promises of complete accessibility coverage.
+
+This implementation targets Linux X11. macOS Accessibility, Windows UI Automation
+and Wayland are not implemented. See [image builds](/deployment/images) and
+[Blender](/guides/blender).

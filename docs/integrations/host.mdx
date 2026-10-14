@@ -1,0 +1,93 @@
+---
+title: "Embed in an application"
+description: "Attach trusted identities and preserve tool images, errors and lifecycle outcomes."
+icon: "plug"
+---
+
+`meerkat_computer.client.ComputerClient` is a synchronous host-side HTTP client.
+It reuses the broker's existing authority and tool protocol. The application owns
+identity eligibility, session lifecycle, approvals, image delivery and tool
+registration. The client never infers an owner from a model argument, profile,
+display name or fork ancestor.
+
+Use a separate virtual environment when the application's MCP dependency differs
+from this package's version. For a callback bridge, install the client where the
+bridge executes. A separate stdio adapter is the alternative when the host can
+register native MCP connections for individual sessions.
+
+```python
+from meerkat_computer.client import ComputerClient
+
+# These values come from trusted host configuration and runtime context.
+client = ComputerClient(broker_url, operator_token=operator_token)
+grant = client.attach(
+    owner=owner,
+    slot="main",
+    profile="desktop",
+    session_id=session_id,
+    runtime_generation=runtime_generation,
+    ttl_seconds=3600,
+)
+tools = client.list_tools(grant)
+result = client.call_tool(grant, "computer_observe", {"surface": "desktop"})
+
+# The host renews before expiry and keeps the returned grant.
+grant = client.renew(grant, 3600)
+# At execution shutdown, release the grant before closing the client.
+client.release(grant)
+client.close()
+```
+
+The broker URL must be loopback HTTP. Reach a remote pool through a private
+SSH/IAP tunnel. Keep the operator credential and grants on the trusted host,
+outside guests, model prompts and tool schemas. A `ComputerGrant` hides its token
+from its representation; it remains a credential and must not be serialized to
+model-visible output. The client is also a context manager; closing it closes
+HTTP resources and does not implicitly release a grant.
+
+For a sleeping outer host, use the [demand gateway](/operations/host-lifecycle)
+as the URL and supply its separate `host_token` from trusted configuration.
+The gateway can wake the host; it does not replace attachment, renewal or the
+application's responsibility to reconcile uncertain effects.
+
+Attach before exposing usable handlers. A registered name alone does not prove
+that attachment succeeded. Keep the grant for the host execution rather than
+attaching on every tool call. The host owns renewal scheduling and must withhold
+further calls when its binding is unavailable. On restart or resume, resolve the
+actual current session and generation and attach again to the same owner/slot.
+Replacement control needs an explicit host decision; the client never retries an
+attachment, silently takes over, or substitutes a fresh session.
+
+`GrantUnavailable` identifies expired or replaced control. `EffectUnknown`
+identifies an uncertain outcome. Both inherit from `ComputerClientError`, which
+exposes safe `code`, `effect`, `status` and `action_id` fields. Observe or inspect
+receipts before deciding what follows an uncertain action. The client never
+automatically repeats it. A confirmed tool failure is returned as an official
+MCP `CallToolResult` with `isError=True`.
+
+Check `effect` as well as the exception type. A renewal response that changes the
+binding tuple raises `GrantUnavailable` with `effect="unknown"`. That outcome
+does not authorize another attachment or continued use of the old grant. Block
+further admission until the host resolves the lifecycle outcome. Only a known
+expired or revoked grant can enter the host's normal reattachment policy.
+
+Async hosts can run this synchronous client in a thread, but cancelling the
+awaiting callback does not stop its HTTP request. Retain and resolve an in-flight
+attach or renewal before admitting another call. Serialize lifecycle changes and
+tool calls for each lease. At shutdown, drain in-flight work before release; if
+the drain or release fails, record cleanup as incomplete without persisting the
+token in logs. A timeout is not evidence that the grant was released.
+
+Tool definitions are official MCP `Tool` objects, including `inputSchema`.
+Results preserve text and image blocks and carry action IDs and metrics in
+`structuredContent`. A callback host must preserve both content and error
+semantics when converting to its runtime's format. For a block-only runtime,
+append a small text receipt containing `action_id`, `is_error`, metrics and any
+error/effect alongside the original image/text blocks. Do not interpret an
+error-bearing tool result as success merely because the HTTP request completed.
+
+Callback tool projection does not establish a native MCP connection. It cannot
+by itself provide MCP Apps resources, original-connection custody or app-only
+tool admission. Use [Console integration](/integrations/console) only with a host that supports that
+native path. Ordinary tool screenshots remain available to the vision model;
+the application separately decides which human-facing channels may receive them.

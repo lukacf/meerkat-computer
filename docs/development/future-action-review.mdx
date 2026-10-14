@@ -1,0 +1,105 @@
+---
+title: "Future action review"
+description: "Defer probabilistic review and information provenance while keeping V1 computer use simple."
+icon: "flask"
+---
+
+**Decision recorded 2026-10-13:** ship V1 (the 0.1.0 candidate) with straightforward
+computer use. Keep the Decisions API experiment as future-version research,
+outside V1's implementation and release gates. No target version
+or delivery date is assigned to the research.
+
+## V1 scope
+
+The agent operates its assigned guest through the normal browser, desktop, shell
+and file capabilities selected by the host. It may use user-authorized personal
+accounts through their ordinary interfaces, including webmail. This does not
+require replacing those interfaces with restricted service-specific MCP tools.
+
+Do not introduce a model reviewer on every action, a mandatory approval for each
+website interaction, or sensitive-information tracking in this version. The
+operating model follows the user's instructions and treats page, email and
+document content as untrusted. That is probabilistic behavior, not an enforced
+guarantee against prompt injection or misuse of a logged-in account.
+
+Keep the existing security boundaries: trusted host-issued identity assignments,
+profile capabilities, exclusive expiring grants, separation between guests,
+separation between guest root and host administration, and private credential
+delivery. Existing application approval policies still apply. Deferring the
+reviewer does not disable those controls.
+
+For upload/download tooling, the primary policy boundary is between the
+trusted host or realm and the guest. The embedding product's configured risk and
+approval policy can apply there; an R2 risk label does not itself imply a human
+approval hold. Ordinary website uploads and downloads
+within the guest remain normal browser operations without a new default approval
+on each transfer. The [file transfer guide](/guides/file-transfers) records the
+implemented staging boundary and limits.
+
+The accepted limitation is that information already available in the guest can
+be misused through the same authorized account or another network channel.
+Sandbox isolation protects the host and other computers; it does not enforce
+correct use of private information within the guest. See the
+[current security contract](/operations/security).
+
+## Why retain the experiment
+
+A standalone Python spike tested OpenAI's Decisions API against synthetic
+screenshots and fixed proposed actions. It did not run an operating agent or
+execute actions in real accounts. The results suggest that an additional reviewer
+could be practical, but do not justify treating it as a security boundary.
+
+| Observation from the 2026-10-13 spike | Result |
+| --- | --- |
+| Latest development configuration | 26/26 benign actions allowed; 30/31 unsafe actions flagged |
+| Latency for that configuration | 320 ms median; 478 ms p95 |
+| Separately frozen validation candidate | 12/12 fresh scenarios correct, with both repetitions agreeing |
+| Whole experiment | 593 API calls; 1,133,591 input tokens; estimated base cost about $0.11 |
+| Remaining development miss | Public-link sharing accepted despite explicit named-person-only instructions |
+
+The development score combines material used for refinement with new tests. It
+is not a held-out safety rate. The separately frozen validation candidate used
+the earlier targeted evidence format; the final dispatch format was refined
+after seeing attack-suite false alarms. Repeated cases are not independent
+security trials, and the attacks were fixed rather than adaptively optimized.
+
+The useful improvements were adapter-derived click targets and descriptions of
+the exact input event. Stronger policy wording alone increased false alarms on
+harmless scrolling over hostile messages. Describing the actual wheel event
+removed those false alarms without automatically exempting scrolling from review.
+Missing provenance remained a separate information problem: the reviewer could
+not distinguish an ordinary upload from an identical-looking artifact with an
+undisclosed private origin.
+
+The [frozen evidence summary](/assets/research/decisions-spike-2026-10-13.json)
+records configurations, selected runs and limitations. Full local source,
+screenshots and raw responses are retained in `~/src/decisions-computer-spike`,
+especially `ITERATIONS.md`, `comparison.html`, `comparison.json` and `runs/`.
+The [Decisions API guide](https://developers.openai.com/api/docs/guides/decisions)
+is a research reference, not a dependency of the next release.
+
+## Questions for a future version
+
+1. **Reliable review evidence.** Bind the latest authenticated user authority,
+   exact pending action, fresh observation, adapter-derived target and input
+   semantics together. Keep the reviewer outside the guest and do not treat an
+   operating agent's explanation or a page's approval claim as authority. Check
+   what happens when the UI changes between review and execution.
+2. **Sensitive-information provenance.** Explore registering outputs derived
+   from private or privileged information when they leave the transcript as
+   files, images or audio. Preserve that lineage through transformations,
+   compaction, restarts and forks. This is a broader Meerkat concern; a computer
+   plugin should not invent a separate source of truth for it.
+3. **Actual workflow evidence.** Move from screenshots to executable browser
+   scenarios and an adaptive attacker. Include authorized personal-account
+   tasks, indirect injection, delayed exfiltration and transformed artifacts.
+   Measure attack success, benign task completion, false alarms, interventions,
+   added latency and token cost separately.
+4. **Coverage and operating policy.** Compare review frequency, uncertainty
+   handling, escalation and provider choices. Account for shell, native apps,
+   background execution and website event handlers: a UI-call reviewer alone
+   does not mediate all guest activity. Evaluate this as defense in depth, not
+   a promised solution to unrestricted-browser information leakage.
+
+These are open research questions. They do not authorize upstream changes,
+introduce a mandatory hosted service, or block the next release.

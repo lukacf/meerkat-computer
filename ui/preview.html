@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Computer preview - Meerkat</title>
+  <link rel="stylesheet" href="/preview.css">
+  <script src="/preview.js" type="module"></script>
+</head>
+<body>
+  <main>
+    <header class="page-header">
+      <div><p class="eyebrow">MEERKAT COMPUTER</p><h1>Computer preview</h1></div>
+      <span class="read-only">Read only</span>
+    </header>
+    <p class="intro">The latest screenshots from your agents' regular computer use. Checking this page does not capture the desktop or take control.</p>
+    <form id="unlock-form" class="unlock-panel">
+      <label for="operator-token">Operator token</label>
+      <div class="unlock-row"><input id="operator-token" type="password" autocomplete="off" spellcheck="false" required><button type="submit">Unlock preview</button></div>
+      <p class="hint">Kept in this tab's memory. Lock or close the page to clear it.</p>
+    </form>
+    <div id="toolbar" class="toolbar" hidden>
+      <label class="checkbox"><input id="show-labels" type="checkbox" checked> Show labels</label>
+      <div class="buttons"><button id="refresh" type="button">Refresh</button><button id="lock" type="button">Lock</button></div>
+    </div>
+    <p id="status" class="status" role="status">Unlock to view your computers.</p>
+    <section id="previews" class="preview-grid" aria-label="Computer screenshots"></section>
+  </main>
+</body>
+</html>

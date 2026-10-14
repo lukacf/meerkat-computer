@@ -1,0 +1,173 @@
+---
+title: "Security and administrator access"
+description: "Keep guest administration, execution control and host administration separate."
+icon: "shield-halved"
+---
+
+The durable agent identity owns the computer. A current execution gets a scoped,
+expiring broker control grant. Guest administrator rights and host administrator
+rights are separate authorities.
+
+Website login credentials have a separate encrypted store and explicit durable
+identity assignments. They are delivered through the private guest control path,
+outside model arguments and provider authentication. See [website credentials](/guides/credentials)
+for setup, one-time input, assignment revocation and the guest-root boundary.
+
+| Principal | Authority | Credential location |
+| --- | --- | --- |
+| Agent execution | Tools for its assigned computer and current grant | Host-issued MCP binding, outside the guest |
+| Guest administrator | Root inside that computer when its profile enables guest_admin | Passwordless sudo for the guest user |
+| Trusted application host | Assign identities, issue/revoke grants, inspect and stop computers | Broker operator credential outside guests |
+| Gateway client | Wake one configured host and manage its suspension inhibit | Separate host token, held only by the trusted application |
+| Host operator | Incus administration, recovery and root shells in guests | Host SSH/IAP identity and local Incus access |
+
+The optional [demand gateway](/operations/host-lifecycle) checks its host token
+before waking. Forwarded guest operations still require the broker's normal
+operator or control credential; the host token grants no guest authority by itself.
+
+## Agent administration
+
+`guest_admin = true` is an immutable computer profile setting. It defaults to
+false; the example coder and desktop profiles enable it. The image installs sudo,
+and the backend provisions the owned guest's sudoers rule. The worker and browser
+continue to run as the ordinary guest user. An agent with exec capability can run
+`sudo -n` to install packages, configure services or repair its own system.
+Admin rights do not add exec capability to a profile that lacks it.
+
+The host selects this setting. Models cannot change profiles or select another
+owner/computer through tool arguments. Changing privileges for an existing slot
+is rejected along with other incompatible profile changes; create a separate slot
+for a different privilege policy.
+
+Guest root must never receive the Incus socket, host filesystem mounts, operator
+credential, provider credentials or other computers' worker tokens. Incus
+containers remain unprivileged with isolated host UID/GID mappings. A VM profile
+provides a separate kernel when stronger isolation is needed. Host-enforced NIC
+filtering and the managed bridge policy protect neighboring guests and host
+management paths. These policies require live qualification on the actual Incus
+host; the Docker UI tests do not prove production network isolation.
+
+This follows the [Incus security model](https://linuxcontainers.org/incus/docs/main/explanation/security/):
+guest root in an unprivileged container is distinct from host root, while local
+Incus administration grants broad control of the host and its instances.
+
+## What a grant can enforce
+
+The external broker authenticates the binding and chooses the assigned computer
+before contacting a worker. A guest A token cannot select guest B or call
+operator routes. Old grants fail at the broker even if a guest worker lies.
+Stopping a computer is a host backend operation and does not need worker consent.
+The normal stop requests graceful shutdown from guest init and may fail if init
+does not cooperate. The broker reports stopped only after Incus confirms it;
+host operators retain the force-stop recovery path below.
+
+Guest code can read or replace its own worker, token, journal and desktop. This
+already applies to exec because its shell shares the worker UID. Root makes the
+same trust domain explicit. Worker fencing and telemetry therefore support
+operational coordination, not adversarial protection against the guest owner.
+Revoking a broker grant prevents new broker-mediated calls; it does not kill
+already-running guest processes or remove guest-created credentials. Stop the
+guest for enforced execution suspension, and rebuild it when a clean system is
+required. Never reassign a used guest to an unrelated identity without wiping it.
+
+Benchmark task success, APS and authoritative model token usage stay in the
+external benchmark/runtime harness. Guest UI counters are useful measurements,
+but a root-owning agent can tamper with them or with guest task state. A benchmark
+must define allowed tools and verify outcomes outside that trust domain.
+
+## Browser action review scope
+
+The next release uses ordinary computer tools without a probabilistic reviewer
+on each action or a new default approval for each website interaction. Existing
+host authentication, identity grants, profile capabilities, guest isolation and
+application approval policies remain in force.
+
+The operating model is responsible for following the user's instructions and
+rejecting instructions embedded in untrusted content. A logged-in browser can
+still expose private information or perform an unwanted action using the user's
+existing access. Guest isolation is not information-flow enforcement within
+that account.
+
+Probabilistic action review and persistent sensitive-information provenance are
+[future-version research](/development/future-action-review), not prerequisites
+for this release. Transfer policy should primarily protect the trusted host or
+realm boundary with the guest; it must not claim to control every network path
+available inside the guest.
+
+## Developer access today
+
+Authenticate to the trusted broker and resolve the exact computer:
+
+```bash
+./scripts/repo-cargo run -- access --computer-id COMPUTER_ID
+```
+
+This read-only operator endpoint verifies the saved owner and instance
+incarnation against Incus. It returns the owner, profile, instance ID, whether a
+controller is active, and `shell_argv`. It returns no worker token or control
+credential, and agent control grants cannot use it.
+
+Use those exact arguments on the Incus host to open a guest root shell, for example:
+
+```bash
+incus --force-local --project meerkat-computer exec VERIFIED_INSTANCE -- /bin/bash -l
+```
+
+On a home server, first SSH to that server. On GCP, use the configured account,
+project, zone and IAP SSH path in `infra/README.md`. This shell uses host operator
+authority and remains available for recovery when the guest worker is broken.
+It is maintenance access, not an agent lease: coordinate with the active agent
+before changing its UI. The access response does not reserve the guest or prevent
+another trusted host operator from changing it after inspection.
+
+If normal shutdown fails, a host operator can force-stop that verified instance:
+
+```bash
+incus --force-local --project meerkat-computer stop VERIFIED_INSTANCE --force
+```
+
+This cuts off guest execution and can lose unsaved work. A successful broker grant
+revocation by itself is not evidence that the guest powered off. Incus's graceful
+shutdown timeout does not automatically force a stop; see its
+[shutdown dispatch](https://github.com/lxc/incus/blob/v6.0.4/cmd/incusd/instance_state.go#L231-L253).
+
+For agent-style debugging through the existing tools, the trusted host can attach
+an explicit developer execution to the same durable owner with takeover=true.
+That uses the existing exclusive grant and fences the prior broker controller.
+
+## Read-only screenshot preview
+
+`/preview` uses the operator credential to read saved agent screenshots. The page
+keeps that credential in tab memory, clears it on lock or page exit, and never
+places it in URLs or browser storage. Screenshot responses and the page use
+`Cache-Control: no-store`; images are validated inline PNGs, never external URLs.
+Reach the loopback broker through the existing private SSH/IAP access path.
+
+The preview reads existing action receipts. It has no worker capture path,
+control grant, input API or takeover behavior. Polling cannot replace the agent's
+observation ID, switch surfaces or change focus. Computer state, capture receipt
+time and age remain visible when the optional identity labels are hidden.
+
+Secure-input admission durably withholds the preceding frame before private
+delivery begins. In-flight, unknown, malformed and screenshot-free results do not
+restore earlier frames; only a later safe observation can supply a new frame.
+This conservative V1 rule also blanks the preview for ordinary admitted tool calls.
+Restart preserves the privacy barrier. See [saved screenshot previews](/guides/preview) for details.
+
+Interactive streaming and human mouse/keyboard input are not part of this preview.
+Developer input uses the existing exclusive grant with explicit takeover, or the
+host root-shell access above coordinated with the active agent.
+
+## Application logins
+
+Browser profiles and guest home directories belong to the durable identity, so
+application logins can survive new sessions and cold starts. Assign application
+accounts intentionally through the trusted host. User-authorized personal
+accounts may be used; the agent then has the access exposed by those logged-in
+accounts. Dedicated accounts or scoped tokens are optional ways to limit that
+access, not a requirement for ordinary computer use.
+
+Do not copy a developer's ambient cloud-management login or model-provider keys
+into the guest. Shared organizational access should be an explicit host policy
+with a revocation path. OS root controls the guest, but does not itself grant
+access to an external application's account.

@@ -1,0 +1,85 @@
+---
+title: "Install on GCP"
+description: "Provision a private outer VM, then run the same Linux and Incus stack."
+icon: "cloud"
+---
+
+GCP supplies the host. Incus supplies the agent computers. Models continue to run
+through your Meerkat host, outside these guests.
+Run the controller commands from a prepared source checkout with `uv` and an
+authenticated `gcloud` installation. The helper does not install either tool.
+
+## Configure an explicit cloud identity
+
+Copy `infra/gcp.example.toml` to a private file. Set your project, account,
+zone, machine type, disk size, existing VPC and subnet. Do not reuse the sample's
+organization values without checking your own deployment.
+
+The subnet needs Cloud NAT or another outbound route for package downloads.
+The helper does not create networks, subnets or NAT. If you want VM guests,
+choose a compatible host machine type and set `nested_virtualization = true`.
+
+~~~bash
+uv run --locked python infra/gcp-host.py plan \
+  --config /private/gcp.toml --name mc-host-01
+uv run --locked python infra/gcp-host.py create \
+  --config /private/gcp.toml --name mc-host-01 --apply
+uv run --locked python infra/gcp-host.py status
+~~~
+
+The helper includes the configured project, account and zone in gcloud commands.
+It does not log in, source shell profiles or change the active gcloud configuration.
+
+## Install the Linux pool
+
+The outer VM has no external IP or attached service account. Its owned firewall
+rule permits IAP SSH to its specific network tag. Shared VPC policy still needs
+operator review; this rule does not remove other existing rules.
+
+Use `gcloud compute scp` and `gcloud compute ssh` with your explicit project,
+account, zone and `--tunnel-through-iap`, then follow
+[local Linux installation](/deployment/local-linux) inside the host.
+
+## Open the private broker tunnel
+
+~~~bash
+uv run --locked python infra/gcp-host.py tunnel --apply
+~~~
+
+The helper verifies the saved VM resource ID and ownership label. The default
+local and broker ports are 18760; use `--local-port` and `--broker-port` when needed.
+Keep the saved host state file: later operations use its exact resource identity.
+
+## Stop and start manually
+
+~~~bash
+uv run --locked python infra/gcp-host.py stop --apply
+uv run --locked python infra/gcp-host.py start --apply
+~~~
+
+Stop computers cleanly before stopping their host. This is a cold stop: disk
+state survives, but guest RAM and running applications do not. The configured
+`max_run_seconds` also gives the GCE host a maximum runtime with STOP behavior.
+Stopped hosts retain their disks and associated storage charges.
+
+## Wake on use and retain RAM
+
+For automatic wake and idle suspension, run the separate
+[demand gateway](/operations/host-lifecycle) on an always-on machine. Its GCP
+helper uses the saved immutable host identity. `ensure-running` starts a stopped
+host or resumes a suspended one; `suspend` preserves the entire host's RAM, including
+every running guest, subject to GCP support and limits.
+
+Do not combine this policy with the example's scheduled STOP. The host-lifecycle
+guide shows how to explicitly clear that schedule and configure separate gateway
+and broker credentials. A preview poll or an unexpired lease does not keep the
+outer host awake.
+
+## Delete owned infrastructure
+
+`delete` is plan-only without `--apply`. Applying it removes the exact owned VM,
+its auto-delete boot disk and the owned SSH rule. Back up computer disks, broker
+state and credential material first. It does not remove VPC or NAT resources.
+
+See [configuration](/reference/configuration) and
+[troubleshooting](/operations/troubleshooting) for resource and readiness failures.

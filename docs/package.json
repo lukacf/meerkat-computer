@@ -1,0 +1,18 @@
+{
+  "name": "meerkat-computer-docs",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": "^22.0.0 || ^24.0.0"
+  },
+  "scripts": {
+    "check": "node --test repository-links.test.mjs && node check.mjs",
+    "dev": "npx --yes mint@4.2.1002 dev --port 3337",
+    "validate:mintlify": "npx --yes mint@4.2.1002 validate"
+  },
+  "devDependencies": {
+    "@mdx-js/mdx": "3.1.1",
+    "remark-gfm": "4.0.1"
+  }
+}

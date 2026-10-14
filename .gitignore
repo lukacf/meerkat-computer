@@ -1,0 +1,12 @@
+.state/
+.venv/
+target/
+__pycache__/
+.pytest_cache/
+*.pyc
+.DS_Store
+.env
+*.egg-info/
+node_modules/
+.playwright-cli/
+.mintlify/

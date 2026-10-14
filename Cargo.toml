@@ -1,0 +1,59 @@
+[package]
+name = "meerkat-computer"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+license = "MIT"
+description = "Identity-owned isolated computers for Meerkat agents"
+repository = "https://github.com/lukacf/meerkat-computer"
+readme = "README.md"
+# Source/binary distribution. The machine dependencies are pinned Git
+# sources; this manifest is deliberately not a crates.io publication contract.
+publish = false
+
+[lib]
+name = "meerkat_computer"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rkat-computer"
+path = "src/main.rs"
+
+[dependencies]
+aes-gcm = "0.10"
+async-trait = "0.1"
+axum = "0.8"
+base64 = "0.22"
+clap = { version = "4", features = ["derive"] }
+fs2 = "0.4"
+indexmap = "2"
+libc = "0.2"
+meerkat-machine-dsl = { git = "https://github.com/lukacf/meerkat.git", rev = "a00bafaf1d862fb41112ff1f30312b350ad05246" }
+meerkat-machine-schema = { git = "https://github.com/lukacf/meerkat.git", rev = "a00bafaf1d862fb41112ff1f30312b350ad05246" }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+subtle = "2"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time", "process", "net", "signal", "fs", "io-util"] }
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+zeroize = "1"
+
+[dev-dependencies]
+tempfile = "3"
+tower = { version = "0.5", features = ["util"] }
+
+[profile.dev]
+debug = 0
+
+[profile.test]
+debug = 0
+
+# Match the pinned Meerkat workspace's measured machine-catalog memory fix.
+# Cargo ignores dependency profile settings, so the consuming root must repeat it.
+[profile.release.package.meerkat-machine-schema]
+opt-level = 1

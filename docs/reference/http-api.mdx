@@ -1,0 +1,169 @@
+---
+title: "Broker HTTP API"
+description: "Version-1 routes and the distinction between operator and control credentials."
+icon: "route"
+---
+
+The broker binds loopback. Use SSH/IAP forwarding for remote controllers.
+JSON routes use bearer authentication. The default body limit is 2 MiB.
+The implementation is
+[src/server.rs](https://github.com/lukacf/meerkat-computer/blob/main/src/server.rs).
+
+## Authentication surfaces
+
+| Credential | Scope |
+| --- | --- |
+| Operator bearer | All computer administration and website-vault management |
+| Current control bearer | One execution's computer tools, preview and grant lifecycle |
+| No bearer | Service health and static operator-page assets |
+
+Static pages are not authorization. Their data routes still require credentials.
+Operator endpoints must never be exposed as model tools.
+
+## Optional host gateway
+
+The [demand gateway](/operations/host-lifecycle) is a separate loopback endpoint.
+Every request to it requires `X-Meerkat-Computer-Host-Token`; forwarded broker
+requests also retain their normal bearer credential. The gateway removes the
+host header before forwarding. Its `/host/status`, `/host/wake`, `/host/inhibit`
+and `/host/clear-inhibit` routes are described in the host-lifecycle guide.
+
+Passive reads do not wake an unavailable host and can return `host_asleep` with
+`effect: "none"`. A transport failure after forwarding an effect is unknown and
+inhibits automatic suspension. These gateway outcomes are separate from broker
+authorization and guest lifecycle decisions.
+
+## Computer administration
+
+| Method | Route | Body / result |
+| --- | --- | --- |
+| POST | `/v1/attachments` | Attachment request; returns private binding |
+| GET | `/v1/computers` | Computer views, no control tokens |
+| GET | `/v1/computers/{computer_id}/access` | Verified operator shell arguments |
+| GET | `/v1/computers/{computer_id}/preview` | Current safe cached frame and computer metadata |
+| POST | `/v1/computers/{computer_id}/stop` | Stops the exact owned computer |
+| POST | `/v1/reap` | Runs idle cleanup |
+
+An attachment body has `owner`, `slot` (default `main`), `profile`,
+`session_id`, `runtime_generation`, `ttl_seconds` (1-86400) and
+`takeover` (default false). Owner is the tagged identity/session union described
+in [ownership](/concepts/ownership).
+
+The returned binding includes `computer_id`, `lease_id`, `epoch`,
+`expires_at_ms`, `session_id`, `runtime_generation`, `capabilities` and
+the secret `token`. Only the trusted host should receive or store it.
+
+## Execution control
+
+| Method | Route | Body / result |
+| --- | --- | --- |
+| GET | `/v1/tools` | Authorized tool definitions |
+| POST | `/v1/tools/call` | `action_id`, `name`, object `arguments` |
+| GET | `/v1/preview?after=CURSOR` | Cached preview for the grant's computer |
+| POST | `/v1/lease/renew` | `ttl_seconds`; returns updated lease metadata |
+| POST | `/v1/lease/release` | Revokes this grant |
+
+Generate and retain a unique action ID before an effectful call. Successful tool
+responses contain content blocks and metrics. There is no caller-selected
+computer on grant routes.
+
+## File staging
+
+All these routes require the operator bearer. File IDs are scoped to the
+specified computer; knowing an ID grants no access.
+
+| Method | Route | Body / result |
+| --- | --- | --- |
+| POST | `/v1/computers/{computer_id}/files?filename=NAME` | Raw binary input; returns staged import metadata |
+| GET | `/v1/computers/{computer_id}/files` | `{files:[...]}` metadata |
+| GET | `/v1/computers/{computer_id}/files/{file_id}` | Export bytes only; private attachment response |
+| DELETE | `/v1/computers/{computer_id}/files/{file_id}` | Removes one broker artifact; `{deleted: FILE_ID}` |
+
+The upload route accepts at most 16 MiB, further restricted by the profile.
+Other request routes retain their normal body limits. Metadata contains
+`file_id`, `filename`, `direction` (`import` or `export`), `size_bytes`,
+`sha256` and `created_at_ms`. Filenames are display names, never host paths.
+The grant's `computer_upload` and `computer_download` tools perform the guest
+portion of the transfer under ordinary action admission. See
+[file transfers](/guides/file-transfers).
+
+## Preview payload
+
+Both preview routes return `status`, `reason` and `frame`. The grant route adds
+`computer_id`; the operator route adds a full `computer` view instead.
+
+| Field | Value |
+| --- | --- |
+| `status` | `available`, `unavailable` or `withheld` |
+| `reason` | Null for an available frame; otherwise `no_capture`, `private_input`, `no_safe_capture`, `operation_in_flight` or `outcome_unknown` |
+| `frame` | Null when unavailable/withheld; otherwise the fields below |
+| `frame.observation_id` | Cursor for this saved capture |
+| `frame.surface` | `browser` or `desktop` |
+| `frame.width`, `frame.height` | Validated PNG dimensions |
+| `frame.mime_type` | `image/png` |
+| `frame.data` | Base64 PNG; null when `after` already matches its observation ID |
+| `frame.received_at_ms` | Time the broker received the capture, in Unix milliseconds |
+| `frame.age_ms` | Age calculated by the broker at read time |
+
+A missing `data` for an unchanged available frame differs from a withheld frame.
+Clear the display when the status becomes unavailable or withheld. Polling never
+captures a new screenshot. See [preview privacy](/guides/preview) and
+[the source projection](https://github.com/lukacf/meerkat-computer/blob/main/src/domain/preview.rs).
+
+## Full-state forks
+
+All fork routes require operator authority:
+
+| Method | Route | Body / result |
+| --- | --- | --- |
+| POST | `/v1/forks` | Request ID, source computer/lease/epoch and targets |
+| GET | `/v1/forks/{request_id}` | Current durable fork view |
+| POST | `/v1/forks/{request_id}/resume-source` | Explicitly reopen a source gate after uncertainty |
+
+A fork view contains `request_id`, `source_computer_id`, `phase`, ordered
+`children`, `ready_children`, start/update timestamps and a safe error.
+Require completed status before starting a council. See [forks](/guides/forks).
+
+## Website credentials
+
+These operator routes exist only as authorized vault operations; they never reveal
+saved secret values.
+
+| Method | Route | Body |
+| --- | --- | --- |
+| GET / POST | `/v1/credentials` | List metadata / save a credential draft |
+| PUT / DELETE | `/v1/credentials/{id}` | Replace a draft / delete the credential |
+| POST | `/v1/credentials/assign` | `credential_ids`, `owners` |
+| POST | `/v1/credentials/unassign` | `credential_ids`, `owners` |
+| GET | `/v1/credential-requests` | List request metadata |
+| POST | `/v1/credential-requests/{id}/fulfill` | Private `values`, optional `save` |
+| POST | `/v1/credential-requests/{id}/cancel` | Cancel the request |
+
+A draft contains `realm`, `label`, exact `origin`, optional `username`
+and `secret`. Fulfillment values contain optional username and secret; optional
+`save` contains a label. Send secret bodies only through the trusted operator
+path. The [credential guide](/guides/credentials) explains private delivery and
+origin checks.
+
+## Errors and evidence
+
+Errors have `error.code`, `error.message`, `error.effect` and optional metrics.
+Operator responses can add a bounded `backend_failure` diagnostic.
+
+| HTTP status | Typical meaning |
+| --- | --- |
+| 401 | Missing/invalid credential or expired lease |
+| 403 | Capability denied |
+| 404 | Unknown resource |
+| 409 | Lifecycle conflict, stale state or other refused operation |
+| 422 | Invalid request, configuration or input |
+| 429 | Capacity admission denied |
+| 500 | Internal/storage failure |
+| 502 | Backend or worker unavailable |
+
+Check effect as well as status. Neither a network timeout nor an error response
+authorizes an automatic retry of an uncertain effect.
+
+`GET /health` returns protocol version 1 and service identity. Operator pages
+are served at `/preview` and `/credentials`; responses use private/no-store
+handling. Broker health does not attest Incus or application readiness.

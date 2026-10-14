@@ -1,0 +1,114 @@
+---
+title: "Observations and fresh references"
+description: "Choose image and semantic channels, bound payload size, and expand only the part you need."
+icon: "eye"
+---
+
+An observation is the evidence for the next UI action. It identifies the active
+surface, coordinate space and current state. Its references belong to that
+capture; they are not stable selectors to store for later.
+
+## Surface and mode
+
+| Surface | Coordinates | Semantic channel |
+| --- | --- | --- |
+| Browser | Viewport pixels | Page elements |
+| Desktop | Screen pixels | OS-level AT-SPI applications, windows and elements |
+
+A profile selects a default surface and an observation mode:
+
+- **Visual:** screenshots, without semantic refs.
+- **Semantic:** structured elements, without an image.
+- **Hybrid:** both channels.
+
+There is one current observation cursor. Switching from browser to desktop, or
+back, invalidates the previous surface's action references.
+
+## Keep routine observations compact
+
+Observation detail controls how much semantic information is returned; it does
+not change the surface or the profile's visual/semantic mode.
+
+| Setting | Default / limit |
+| --- | --- |
+| Profile `detail` | `compact`; `full` is also supported |
+| Profile `max_elements` | Ceiling of 300; accepted range 1-300 |
+| Profile `max_text_chars` | Ceiling of 24000; accepted range 256-24000 |
+| Compact projection | Up to 60 elements and 6000 text characters, reduced by profile ceilings |
+| Full projection | Uses the profile ceilings, not an unbounded tree |
+
+`computer_observe` can override detail and limits for that call, but cannot
+raise a limit above the profile's ceiling.
+Requests above a ceiling fail with `observation_limit_exceeded`.
+
+~~~json
+{"surface":"desktop","detail":"compact"}
+~~~
+
+~~~json
+{"surface":"desktop","detail":"full","max_elements":200,"max_text_chars":12000}
+~~~
+
+A full observation can still be truncated. Read the returned omission and
+truncation information rather than assuming every element was included.
+Projection limits and accessibility availability are separate: a bounded result
+can omit elements from an otherwise available tree, and a small result does not
+prove that an application exposes complete accessibility.
+
+The `projection` object reports `detail`, `max_elements`, `max_text_chars`,
+`inspected_elements`, `returned_elements`, `omitted_elements`, `text_chars`,
+`truncated_fields` and `truncated`. Native accessibility status remains a source
+traversal fact. Browser `accessibility_truncated` reports a shortened ARIA text
+snapshot separately.
+
+Compact native nodes retain names, roles, states, bounds, application/window IDs
+and advertised action names. Duplicate text is represented by
+`text_same_as_name: true`. Full detail adds native IDs and descriptions within
+the text ceiling.
+
+Compact detail omits hidden controls and empty layout nodes, while retaining
+application/window summaries and an explicitly scoped root. Full detail can
+include those inspected nodes. Native traversal is itself bounded: 300 nodes,
+128 children per node, depth 24, 300 characters for names/descriptions/native IDs,
+100 for roles and 2048 for an individual text value. Source truncation is reported
+in node issues. Browser labels/values also have a 300-character source cap and
+truncation flags. Projection limits do not remove these source bounds.
+
+## Expand one native subtree
+
+Use a current desktop ref with the observation that supplied it:
+
+~~~json
+{
+  "surface":"desktop",
+  "observation_id":"current-desktop-observation",
+  "scope_ref":"ref-from-that-observation",
+  "detail":"full"
+}
+~~~
+
+`scope_ref` and `observation_id` are a pair. A scoped read validates the target
+against the current native state and returns a new observation with new actionable
+refs. The previous observation is no longer the action cursor.
+
+Browser observations support detail and limits, but browser `scope_ref` is not
+implemented. Do not substitute a CSS selector or a guessed native ref.
+
+## Act once, then inspect
+
+Pass the latest `observation_id` to `computer_act`. A stale page, changed native
+target or invalid reference is refused. Ref-based desktop input additionally
+checks the active owning native window. Applications can render asynchronously;
+these checks do not claim atomicity with every animation or overlay.
+
+The worker retains the private state needed for stale-action checks rather than
+using only the compact model-facing projection. Compact output is a presentation
+bound, not weaker grant authority.
+
+Actions normally return a fresh observation. If an effect is unknown, observe or
+inspect independent state before deciding what to do next; do not replay the
+previous command automatically. See [tools](/reference/tools) and
+[security](/operations/security) for the operational limits of guest-side evidence.
+
+Action follow-up observations use the profile's defaults. A one-call full or
+scoped observation does not change future observation settings.

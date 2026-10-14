@@ -1,0 +1,55 @@
+---
+title: "Blender: program, then inspect"
+description: "Use bpy for scene construction and fresh desktop captures for visual verification."
+icon: "cube"
+---
+
+Use Blender's Python API for geometry, materials, scene layout and rendering.
+Use computer observations to check that the intended result is actually visible.
+The full desktop image includes Blender and Mesa software rendering.
+
+## Run a script in the open scene
+
+1. Write your script using `workspace_write` with the relative path `scene.py`
+   (the default workspace resolves it to `/workspace/scene.py`).
+2. Observe the desktop and focus the intended Blender area.
+3. Send `Shift+F4` to switch that area to the Python Console.
+4. Type the following command and press Enter:
+
+~~~python
+exec(compile(
+    open('/workspace/scene.py', encoding='utf-8').read(),
+    '/workspace/scene.py',
+    'exec',
+))
+~~~
+
+Inspect console errors. Use `Shift+F5` to return the area to the 3D viewport, then
+take a fresh observation. Save the `.blend` file explicitly.
+
+Running ordinary guest Python does not control an existing Blender process.
+The script above runs inside Blender's own Python interpreter.
+
+## Run a bounded background job
+
+~~~bash
+blender --background --python-exit-code 1 --python /workspace/scene.py
+~~~
+
+Submit this through `workspace_exec` within its 120-second maximum request timeout.
+It starts a separate Blender process. Loading or rendering that process's saved
+output is a separate verification step.
+
+A completed command is execution evidence, not a visual-quality judgment. If an
+effect is unknown, inspect the scene or output before considering another run.
+A second script execution can duplicate objects.
+
+## Plan resources
+
+Software rendering works without GPU passthrough but can consume significant CPU
+and memory. Configure the desktop profile and pool admission for the scene size.
+GPU passthrough is not configured by these installers.
+
+For API details, use the documentation matching the installed Blender version:
+[Python API](https://docs.blender.org/api/current/) and
+[Python Console](https://docs.blender.org/manual/en/latest/editors/python_console.html).

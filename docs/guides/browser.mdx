@@ -1,0 +1,60 @@
+---
+title: "Use the browser"
+description: "Navigate, inspect a page, and act on current semantic references or viewport coordinates."
+icon: "browser"
+---
+
+The browser runs in the assigned guest with a persistent profile. Browser-only
+images use headless Chromium; desktop images show Chromium in the guest's X11 session.
+The browser sandbox stays enabled.
+
+## Observe, act, verify
+
+<Steps>
+  <Step title="Navigate">
+    Call `browser_navigate` with `{"url":"https://example.com"}`.
+    The result contains the next observation, not an assertion that your task succeeded.
+  </Step>
+  <Step title="Read the observation">
+    Use semantic refs in semantic/hybrid mode, or the image in visual/hybrid mode.
+    Coordinates are viewport pixels, not host-screen pixels.
+  </Step>
+  <Step title="Act on that capture">
+    Pass its observation ID and one action to `computer_act`.
+    Use an observed ref or a coordinate pair, never both.
+  </Step>
+  <Step title="Inspect the result">
+    Actions normally return a fresh observation. If a target is stale, observe
+    again and choose the next action from the new page state.
+  </Step>
+</Steps>
+
+~~~json
+{
+  "observation_id": "id-from-last-observation",
+  "action": {"type": "click", "ref": "ref-from-that-observation"}
+}
+~~~
+
+For form input, `fill` replaces the target's text; `type` supplies text input.
+Use [credential tools](/guides/credentials) for saved passwords or one-time private
+input instead of putting secrets in action arguments.
+
+## Tabs
+
+`browser_tabs` supports `list`, `new`, `select` and `close`. Select and close
+take a returned `tab_id`; only new accepts a URL. Changing tabs or surfaces makes
+the previous observation unsuitable for further actions.
+
+## When a page is difficult
+
+Use a fresh screenshot to check overlays, scroll position and custom controls.
+Use the [observation controls](/concepts/observations) to request more detail.
+Opening a native file dialog requires a desktop observation; a browser DOM
+snapshot does not describe that dialog.
+
+Browser automation and guest shell are separate capabilities. Giving an agent
+exec lets it run other tools inside its computer. That is useful for artifacts
+and debugging, but does not turn benchmark instructions into enforced policy.
+
+See [tool reference](/reference/tools) for argument limits and supported actions.

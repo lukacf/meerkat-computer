@@ -1,0 +1,74 @@
+---
+title: "Build and upgrade images"
+description: "Publish immutable browser or desktop images with explicit provenance."
+icon: "boxes-stacked"
+---
+
+A profile points to a full image fingerprint. Build a new image instead of changing
+the meaning of an existing one. Containers and VMs need separate images.
+
+<Tabs>
+  <Tab title="Browser container">
+    ~~~bash
+    sudo python3 infra/build-image.py \
+      --project meerkat-computer --name mc-browser-v1 \
+      --state .state/browser-image.json --apply
+    ~~~
+  </Tab>
+  <Tab title="Desktop container">
+    ~~~bash
+    sudo python3 infra/build-image.py \
+      --project meerkat-computer --name mc-desktop-v1 \
+      --state .state/desktop-image.json --desktop --apps full --apply
+    ~~~
+  </Tab>
+  <Tab title="Desktop VM">
+    ~~~bash
+    sudo python3 infra/build-image.py \
+      --project meerkat-computer --name mc-desktop-vm-v1 \
+      --state .state/desktop-vm-image.json --kind virtual-machine \
+      --desktop --apps full --apply
+    ~~~
+  </Tab>
+</Tabs>
+
+Omit `--apply` to inspect the plan. Use a fresh builder name and state file when
+changing image options. VM profiles require at least the image's disk size;
+the supplied VM builder requires a root disk of at least 16 GiB.
+
+## What is inside
+
+The image installs the Python worker, locked Python dependencies, Chromium, Git,
+curl, Node.js/npm and basic C/C++ tools. Rust and other language-specific toolchains
+are not preinstalled. Model-provider keys, control grants, browser profiles and
+user workspaces are not copied into the image.
+
+Desktop images add Xvfb, Openbox, a private D-Bus/AT-SPI session and the selected
+apps. Both bundles include Mousepad, Thunar, the Evince PDF viewer and Poppler
+utilities (`pdfinfo`, `pdftotext`, `pdftoppm`). `--apps full` additionally includes
+Blender, Inkscape, GIMP and LibreOffice with GTK integration. These desktop packages
+are not added to the headless browser image. See [PDF workflows](/guides/pdf).
+
+Chromium runs with its sandbox enabled. A failed sandbox or AppArmor check fails
+the build; there is no fallback to `--no-sandbox`. Desktop apps use software
+rendering unless the operator separately configures and qualifies GPU access.
+
+## Provenance and readiness
+
+Build state records source and resolved base-image fingerprints. Python packages
+are locked; Ubuntu package installation still follows the configured mirror.
+The builder checks worker and real browser readiness before publication.
+
+Preserve build state for recovery. Existing resources with another ownership
+marker are refused. A failed build can leave owned resources for inspection;
+do not treat an ambiguous failure as permission for destructive retry.
+
+## Roll out deliberately
+
+Set the new fingerprint in a new profile/slot, qualify it, then move desired
+artifacts. Existing computers keep their immutable profile. This package does
+not implement automatic image upgrades or workspace migration. Existing guests
+need a newly built image to receive added packages such as the PDF viewer.
+
+See [native applications](/guides/native-desktop), [configuration](/reference/configuration)
+and the [detailed image implementation](https://github.com/lukacf/meerkat-computer/blob/main/infra/README.md#optional-native-desktop-image).

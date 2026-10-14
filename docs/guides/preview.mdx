@@ -1,0 +1,61 @@
+---
+title: "Preview saved screenshots"
+description: "Watch the captures an agent already produced, with current privacy checks."
+icon: "image"
+---
+
+Open `http://127.0.0.1:18760/preview` while the broker is running. For a remote
+pool, forward its loopback port using the SSH/IAP instructions in
+[Linux setup](/deployment/local-linux). Enter the same operator credential used by the
+trusted application host. Control-grant tokens cannot unlock the preview.
+
+The page checks saved captures every two seconds and displays one card per
+computer. It reuses the PNG already returned by a regular agent observation or
+action. Refresh only reads saved data; it never calls a guest, takes a screenshot,
+changes focus, advances the observation cursor or acquires control. A computer
+with no agent screenshots has no preview yet. Semantic-only observations contain
+no image.
+
+Each card shows the computer's current lifecycle state and the time the broker
+received the displayed capture, with its age. This is the last agent screenshot,
+not continuous video. It can be old when the agent is idle or the computer is
+stopped. **Show labels** defaults on; unchecking it hides the owner, slot and
+profile labels completely. State and capture age remain visible.
+
+## Privacy and control
+
+The operator token stays in the page's memory and is cleared on **Lock**, page
+exit or a failed request. It is not placed in URLs, cookies or browser storage.
+The page and API responses are not cacheable. Images are validated PNG data,
+never remote image URLs. Treat the operator credential and screenshots as
+private. The operator can see every computer managed by that broker.
+
+Private input durably blanks the previous frame as soon as delivery is admitted,
+before values reach the guest. V1 also conservatively blanks the frame when an
+ordinary worker operation is admitted. Pending or unknown outcomes, malformed
+receipts and results without a screenshot keep it blank. A later safe regular
+observation supplies the next image. Replaying an older saved action cannot
+restore its screenshot. These rules survive broker restart.
+
+The preview has no keyboard, mouse, shell or takeover controls. Existing developer
+access remains available through [security and administrator access](/operations/security).
+
+## API
+
+`GET /v1/computers/{computer_id}/preview` requires `Authorization: Bearer` with the
+operator credential. It returns current computer metadata and either an available
+frame or a withheld/unavailable reason. `?after=OBSERVATION_ID` omits repeated PNG
+data when the current frame has that ID. The API projects the existing persisted
+receipt and records no independent screenshot history.
+
+See [preview response fields](/reference/http-api#preview-payload) for field names and
+[tests/preview.rs](https://github.com/lukacf/meerkat-computer/blob/main/tests/preview.rs) for authorization, effect-free polling,
+receipt replay and restart/privacy tests. Real Chromium UI tests run with
+`make smoke`.
+
+For inline MCP Apps, `GET /v1/preview` reads only the computer resolved from the
+current control grant. It accepts the same optional `after` cursor but no computer
+or identity selector. It returns `computer_id`, `status`, `reason` and `frame`,
+without operator diagnostics or lease details. Authentication and projection share
+one store lock. The operator-specific endpoint remains operator-only.
+See [Console integration](/integrations/console) for realm configuration and the inline MCP App.

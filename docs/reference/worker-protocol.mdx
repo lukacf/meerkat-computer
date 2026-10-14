@@ -1,0 +1,132 @@
+---
+title: "Worker and backend protocol"
+description: "Private guest calls, epoch fencing and the backend's ownership contract."
+icon: "network-wired"
+---
+
+The worker is inside its guest trust domain. The broker runs outside that domain
+and selects the computer before calling the worker. Do not expose the worker API
+publicly or treat it as protection against guest root.
+
+## Worker HTTP, protocol version 1
+
+`GET /health` reports protocol version, readiness and available surfaces.
+POST routes and the private transfer routes require the per-computer worker
+bearer token.
+
+~~~json
+{
+  "lease_id": "lease-identifier",
+  "epoch": 1,
+  "expires_at_ms": 1893456000000,
+  "capabilities": ["browser", "screenshots", "browser_semantics"],
+  "observation": {"surface":"browser","mode":"hybrid","width":1280,"height":800}
+}
+~~~
+
+Send that shape to `POST /v1/lease`. The worker persists its highest epoch,
+rejects older epochs and refuses the same epoch with another lease ID. The same
+lease/epoch can renew. Revocation uses a new epoch, expiry zero and no capabilities.
+The broker checks protocol version, lease ID and epoch in the acknowledgement.
+
+~~~json
+{
+  "lease_id": "lease-identifier",
+  "epoch": 1,
+  "action_id": "unique-operation-id",
+  "name": "computer_observe",
+  "arguments": {"surface":"browser"}
+}
+~~~
+
+Send calls to `POST /v1/call`. Successful results contain MCP content blocks
+and metrics. Errors contain code, message and effect classification. The action
+journal admits before effects, returns completed duplicate receipts and refuses
+uncertain replay.
+
+Schema-valid `computer_act` requests rejected before admission include
+`metrics.delta.ui_input_rejections`. The worker atomically saves their completed
+receipt and counters without admitting an effect; a duplicate action ID returns
+the saved receipt without incrementing counts. Authentication, initial lease
+checks and schema validation precede this accounting path. Execution counters
+retain their existing dispatch and acknowledgement meanings.
+
+Freshness diagnostics are finite numeric counters named `stale_input_` followed
+by one of: `observation_id`, `display`, `focus`, `accessibility_connection`,
+`accessibility_structure`, `accessibility_events`, `visual_unavailable`,
+`visual_topology`, `visual_pixels`, `visual_target_outside`, `native_target` or
+`native_window`. Multiple reasons can describe the first failing validation
+stage. They contain no captured content; raw diagnostic strings are not exposed.
+No-effect `stale_ref` errors map to the broker's existing `conflict` classification.
+
+Desktop hybrid capture retries unstable semantics three times, then makes a
+fresh screenshot capture without semantic refs. The result reports
+`accessibility.status: "partial"`, issue `unstable_tree`, and `input.status` as
+`requires_revalidation` or `observe_only`. Fallback increments the
+`observation_fallbacks` metric. Input still revalidates the accessibility event
+state and focused visual target. A capture that cannot return a coherent display
+remains an `observation_unstable` worker error; the broker exposes it as a
+`conflict` with effect `none`, rather than `invalid_input`.
+
+See [tool reference](/reference/tools) for argument contracts and
+[observations](/concepts/observations) for bounded projection.
+
+## Private binary transport
+
+The broker uses `PUT`, `GET` and `DELETE /v1/transfers/{file_id}` for bounded raw
+bytes. These are private broker-to-worker routes, not model tools. Every request
+also carries `X-Meerkat-Lease-Id` and `X-Meerkat-Epoch`; the worker checks the
+current, unexpired, applied lease while holding its operation lock.
+
+`PUT` requires `file_import`, accepts at most 16 MiB, and returns only
+`file_id`, `size_bytes` and `sha256`. The body has a 30-second deadline, and the
+lease is checked again after reading it. Identical staged bytes can be recognized
+without overwriting an existing blob. Different bytes under the same ID fail.
+`GET` requires `file_export` and returns only an exported blob. `DELETE` removes
+transport staging under the current lease. File IDs are canonical UUIDs; they
+never encode paths. Binary GET responses use `Cache-Control: no-store`.
+
+Two internal calls, `transfer_import` and `transfer_export`, run through the
+normal action journal. An import verifies staged size and SHA-256 before writing
+its guest destination. An export snapshots a bounded regular guest file before
+publishing its transport blob. The broker verifies received bytes before adding
+them to its own private outbox. MCP results and persisted action receipts contain
+metadata, not binary payloads.
+
+Transport staging is limited to 128 MiB and 1024 entries per worker lease.
+Successful imports consume their blobs; the broker removes successful export
+blobs after its durable copy exists. Rebinding to a new lease clears old transport
+staging. This is separate from the computer-owned broker artifacts, which survive
+grant changes. Upgrade the broker and worker together when enabling the new
+capabilities. See [file transfers](/guides/file-transfers) for the host API and
+profile settings.
+
+## Private guest control
+
+Website input and fork rebinding use a guest-local Unix socket reached through
+host-owned Incus exec and private stdin. They are not worker-network API methods.
+The guest never receives the vault key, operator credential or a vault reader.
+
+Fork control closes the worker gate before checkpointing. Child rebinding rotates
+the worker token and clears inherited leases, action history, metrics and observations
+before normal egress. The private-input privacy guard survives the copy.
+
+## Backend embedding
+
+The Rust `Backend` trait owns infrastructure effects such as inspect, ensure,
+start, stop and destroy. The broker owns the lifecycle decision that invokes them.
+A custom implementation must preserve the exact computer ownership/incarnation
+checks and fail closed when absence or an effect cannot be proven.
+
+`ComputerSpec` carries the computer ID, ownership ID, immutable profile and
+worker token. `BackendComputer` records the actual instance and worker endpoint.
+Worker tokens are excluded from debug/public output.
+
+Read-only inspect is not permission to adopt an existing resource with a matching
+name. It must verify ownership, profile and incarnation. Unsupported full-state
+forks fail explicitly; no backend may substitute a disk-only copy.
+
+Sources:
+[Backend trait](https://github.com/lukacf/meerkat-computer/blob/main/src/backend.rs),
+[worker models](https://github.com/lukacf/meerkat-computer/blob/main/python/meerkat_computer/protocol.py),
+and [domain library](https://github.com/lukacf/meerkat-computer/blob/main/src/domain.rs).

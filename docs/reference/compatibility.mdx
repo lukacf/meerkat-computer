@@ -1,0 +1,87 @@
+---
+title: "Compatibility and limits"
+description: "Distinguish implemented capabilities, deployment requirements and future work."
+icon: "list-check"
+---
+
+The current package version is `0.1.0`, a source-distributed release candidate. Source and
+operator-provided artifacts are supported installation paths; a version number
+alone does not qualify a particular host, image or consumer integration.
+
+## Meerkat 0.9 integration
+
+The broker's machine DSL and schema pin the published Core `v0.9.0` commit
+`a00bafaf1d862fb41112ff1f30312b350ad05246`. The Python example uses
+`meerkat-sdk==0.9.0` with the released `rkat-rpc` 0.9.0 binary.
+
+Native Console acceptance targets published Meta `v0.9.0`, commit
+`b275e0ed4fe61cf4ff43d16691c54efb17812919`, with its exact Core `=0.9.0`
+dependencies and native MCP Apps host. The repository formerly named
+`meerkat-mobkit` now redirects to `meerkat-meta`; the consumer crate is
+`meerkat-meta`. See the current qualification record below.
+
+### Released SDK limitations
+
+With `meerkat-sdk==0.9.0`, `read_session_history` can reject the runtime
+provider metadata `open_ai_assistant_message` after a successful OpenAI turn.
+The checked-in computer-use example does not call that API and completed with
+the released SDK/runtime. Both real exercises returned a null
+`terminal_cause_kind`; request usage, token usage and tool-call counts remained
+available. No patched SDK or replacement runtime is bundled here.
+
+## Supported surfaces
+
+| Surface | Current contract |
+| --- | --- |
+| Agent runtime | Meerkat remains responsible for models, turns and usage |
+| Broker host | Linux with Incus; local server or private GCP host |
+| Demand gateway | Optional always-on loopback service; exact-host wake and idle suspension |
+| Guest types | Unprivileged containers and VMs |
+| Native desktop | Linux X11 and AT-SPI |
+| Browser | Playwright Chromium, semantic/visual/hybrid interaction |
+| Native app bundle | Minimal or full desktop image, software rendering |
+| MCP | Official Python SDK, stdio, one execution binding |
+| Python host client | Synchronous, image-preserving broker client |
+| Inline Console preview | Standard MCP Apps, negotiated native connection; consumer adoption required |
+| Full-state fork | Same-host Incus VMs with stateful migration support |
+| Website vault | Optional encrypted local store and identity assignments |
+| File transfers | Private per-computer input/output staging; 16 MiB file ceiling; separate import/export capabilities |
+
+## Explicitly outside the current implementation
+
+- macOS Accessibility, Windows UI Automation and Wayland.
+- Multi-host scheduling, warm-spare replenishment and automatic image upgrades.
+- Portable cross-host RAM checkpoints or shared copy-on-write RAM.
+- Automatic Meerkat/Meta fork-to-computer rebinding.
+- An independent live desktop stream or human input through the preview.
+- A native Meerkat tool dispatcher supplied by this package.
+- External vault backends, key rotation, passkeys or external MFA automation.
+- GPU passthrough configured by the supplied installers.
+- Resumable or unlimited-size file transfers, automatic archive extraction, and
+  user upload/download controls inside the inline preview.
+- Probabilistic action review and persistent sensitive-information provenance.
+  These are [deferred research](/development/future-action-review), outside the
+  next release's scope.
+
+## Evidence boundaries
+
+Package unit tests, local browser tests, Docker desktop tests and live Incus
+qualification prove different things. The 2026-10-14 installed candidate passed
+native Console qualification against released Core/SDK/Meta 0.9.0, including
+67 seconds of preview polling. The same wheel completed a real Astra
+PDF-summary/export task and the checked-in SDK example. Linux desktop, PDF,
+broker-stack and administrator checks passed with recorded image fingerprints.
+See [verification](/development/verification) for exact inputs and source mappings.
+A changed wheel, source fingerprint or consumer needs renewed acceptance.
+
+These local process and Docker receipts do not establish a deployed HomeCore
+consumer or live Incus isolation. HomeCore's 2026-10-12
+wake/idle verification is separate:
+its native inline preview remains disabled and unqualified, and ordinary tool
+screenshots still render as placeholders in that deployed Console. Follow the
+[current evidence record](https://github.com/lukacf/meerkat-computer/blob/main/VERIFICATION.md)
+for the exact tested versions and open limits.
+
+Use [verification](/development/verification) for the lanes and retained records.
+Source installation and operator-provided candidates are documented
+distribution paths. No public registry, hosted service or published website is implied.

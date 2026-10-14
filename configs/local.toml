@@ -1,0 +1,67 @@
+# Optional website credentials. Create the key with `rkat-computer init-vault-key`.
+# It must be outside server.state_dir. See CREDENTIALS.md.
+# [credentials]
+# key_file = "/absolute/private/path/credential.key"
+
+[server]
+listen = "127.0.0.1:18760"
+state_dir = ".state/broker"
+operator_token_env = "MEERKAT_COMPUTER_OPERATOR_TOKEN"
+
+[pool]
+backend = "incus"
+incus_binary = "incus"
+incus_project = "meerkat-computer"
+max_running = 16 # Admission cap, not a measured density result.
+min_available_memory_mib = 8192
+worker_port = 18765
+ready_timeout_seconds = 180
+
+[profiles.browser]
+# Replace with the full fingerprint printed by infra/build-image.py.
+image = "REPLACE_WITH_IMAGE_FINGERPRINT"
+kind = "container"
+cpus = 2
+memory_mib = 2048
+disk_gib = 10
+capabilities = ["browser", "screenshots", "browser_semantics"]
+idle_stop_seconds = 900
+
+[profiles.browser.observation]
+mode = "hybrid"
+width = 1280
+height = 800
+
+[profiles.coder]
+# Add "file_import" and/or "file_export" to capabilities for private host transfers.
+# Optional [profiles.coder.transfers] sets max_file_bytes and max_stored_bytes.
+image = "REPLACE_WITH_IMAGE_FINGERPRINT"
+kind = "container"
+cpus = 2
+memory_mib = 4096
+disk_gib = 20
+guest_admin = true
+capabilities = ["browser", "screenshots", "browser_semantics", "exec", "files"]
+idle_stop_seconds = 1800
+
+[profiles.coder.observation]
+mode = "hybrid"
+width = 1280
+height = 800
+
+[profiles.desktop]
+# Build with infra/build-image.py --desktop --apps full.
+image = "REPLACE_WITH_DESKTOP_IMAGE_FINGERPRINT"
+kind = "container"
+cpus = 4
+memory_mib = 8192
+disk_gib = 30
+guest_admin = true
+capabilities = ["browser", "desktop", "screenshots", "browser_semantics", "desktop_semantics", "exec", "files"]
+idle_stop_seconds = 900
+
+[profiles.desktop.observation]
+surface = "desktop"
+mode = "hybrid"
+width = 1280
+height = 800

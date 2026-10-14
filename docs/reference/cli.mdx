@@ -1,0 +1,99 @@
+---
+title: "Operator CLI"
+description: "Commands and flags implemented by rkat-computer."
+icon: "terminal"
+---
+
+The examples use the installed `rkat-computer` binary. From a source checkout,
+replace that executable with `./scripts/repo-cargo run --`; for example,
+`./scripts/repo-cargo run -- validate --config FILE`.
+This package does not add these commands to `rkat`.
+
+## Local commands
+
+~~~text
+rkat-computer serve --config FILE
+rkat-computer gateway --config FILE
+rkat-computer validate --config FILE
+rkat-computer init-vault-key --key-file FILE
+~~~
+
+`validate` performs configuration validation without infrastructure effects.
+`init-vault-key` creates a private key and refuses overwrite; it never prints key
+bytes. `serve` opens state, invalidates old grants on recovery and starts the reaper.
+`gateway` runs the optional always-on host wake/suspend proxy with its own
+configuration and credential. See [host lifecycle](/operations/host-lifecycle).
+
+## Operator-authenticated commands
+
+All commands in this table accept `--broker-url URL` and
+`--operator-token-env NAME`.
+
+| Command | Required arguments |
+| --- | --- |
+| `attach` | `--request FILE --binding-file FILE` |
+| `list` | None |
+| `access` | `--computer-id ID` |
+| `stop` | `--computer-id ID` |
+| `reap` | None |
+| `fork` | `--request FILE` |
+| `fork-status` | `--request-id UUID` |
+| `fork-resume-source` | `--request-id UUID` |
+| `files` | `--computer-id ID`, followed by a file subcommand |
+
+Defaults: broker URL `http://127.0.0.1:18760`, operator environment variable
+`MEERKAT_COMPUTER_OPERATOR_TOKEN`. Attachment creates a fresh private binding file.
+
+~~~text
+rkat-computer files --computer-id ID stage --file FILE [--filename NAME]
+rkat-computer files --computer-id ID list
+rkat-computer files --computer-id ID get --file-id UUID --output NEW_FILE
+rkat-computer files --computer-id ID delete --file-id UUID
+~~~
+
+Put common flags before the file subcommand. Stage returns an opaque input ID;
+get retrieves only exports and verifies their length and digest before creating
+a private output file. It refuses overwrite. See [file transfers](/guides/file-transfers).
+
+## Grant-authenticated commands
+
+~~~text
+rkat-computer release --binding-file FILE [--broker-url URL]
+rkat-computer renew --binding-file FILE [--ttl-seconds SECONDS] [--broker-url URL]
+~~~
+
+Renew defaults to 3600 seconds; the broker accepts TTLs from 1 to 86400 seconds.
+These commands use the binding credential rather than the operator environment.
+
+The Rust operator commands connect directly to a broker or its private tunnel;
+they do not send the gateway's additional host token. Use the
+[Python host client](/operations/host-lifecycle#connect-through-the-python-sdk)
+for authenticated gateway requests.
+
+There is no CLI start or delete-computer command. Attaching a stopped computer
+starts it through the broker lifecycle. Destructive infrastructure cleanup is an
+explicit host-operator task. The separate GCP helper has outer-host start/stop/delete.
+
+## MCP and worker entrypoints
+
+~~~text
+meerkat-computer-mcp --broker-url URL --binding-file FILE \
+  [--host-token-env NAME] [--timeout SECONDS] [--mcp-apps]
+meerkat-computer-worker --help
+~~~
+
+The adapter is a stdio MCP server for one execution. The worker is normally started
+by its guest service; it is not an unauthenticated public endpoint.
+`--host-token-env` reads the trusted gateway credential from the named environment
+variable and performs an explicit wake before MCP initialization. HTTP timeout
+defaults to 150 seconds for direct connections or 900 seconds with that flag;
+`--timeout` accepts a positive finite number up to 86400 seconds. The host's MCP
+connection deadline must also cover startup, or the trusted host must wake the
+gateway first.
+`--mcp-apps` opts into the inline preview only when the client also negotiates Apps.
+Use [HTTP reference](/reference/http-api) for protocol clients and
+[worker protocol](/reference/worker-protocol) for backend implementers.
+
+Source of truth:
+[src/main.rs](https://github.com/lukacf/meerkat-computer/blob/main/src/main.rs) and
+[mcp_adapter.py](https://github.com/lukacf/meerkat-computer/blob/main/python/meerkat_computer/mcp_adapter.py).

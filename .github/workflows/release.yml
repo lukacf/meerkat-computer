@@ -1,0 +1,48 @@
+name: Release candidate
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    uses: ./.github/workflows/ci.yml
+  artifacts:
+    needs: validate
+    # Private routing is never considered once the repository is public.
+    runs-on: ${{ fromJSON(github.event.repository.private && (vars.MEERKAT_COMPUTER_RUST_RUNNER || '["self-hosted","Linux","X64","meerkat-computer-rust"]') || '"ubuntu-24.04"') }}
+    timeout-minutes: 20
+    env:
+      RUST_LANE_ID: ci
+      CARGO_BUILD_JOBS: "4"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.94.1"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.9"
+          python-version: "3.11.13"
+          enable-cache: true
+      - name: Resolve authoritative Cargo cache paths
+        run: ./scripts/repo-cargo --print-env | sed -n '/^CARGO_HOME=/p;/^CARGO_TARGET_DIR=/p' >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.CARGO_HOME }}/registry
+            ${{ env.CARGO_HOME }}/git
+            ${{ env.CARGO_TARGET_DIR }}
+          key: release-${{ runner.os }}-1.94.1-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            release-${{ runner.os }}-1.94.1-${{ hashFiles('Cargo.lock') }}-
+            rust-${{ runner.os }}-1.94.1-${{ hashFiles('Cargo.lock') }}-
+      - name: Build and verify candidate artifacts
+        run: make release-artifacts RELEASE_OUTPUT=.state/release-candidate
+      - uses: actions/upload-artifact@v4
+        with:
+          name: meerkat-computer-linux-x86_64-${{ github.sha }}
+          path: .state/release-candidate
+          include-hidden-files: true
+          if-no-files-found: error

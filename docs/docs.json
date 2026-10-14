@@ -1,0 +1,125 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "name": "Meerkat Computer",
+  "description": "Identity-owned computers for Meerkat agents, on infrastructure you control.",
+  "theme": "maple",
+  "colors": {
+    "primary": "#A46921",
+    "light": "#E8A84C",
+    "dark": "#B5711E"
+  },
+  "logo": {
+    "light": "/assets/wordmark-light.svg",
+    "dark": "/assets/wordmark-dark.svg"
+  },
+  "favicon": "/assets/icon.svg",
+  "navbar": {
+    "links": [
+      {
+        "label": "Meerkat",
+        "href": "https://docs.rkat.ai"
+      },
+      {
+        "label": "Private repository",
+        "href": "https://github.com/lukacf/meerkat-computer"
+      }
+    ]
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Guide",
+        "groups": [
+          {
+            "group": "Start here",
+            "pages": [
+              "introduction",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Understand the system",
+            "pages": [
+              "concepts/ownership",
+              "concepts/observations",
+              "concepts/architecture"
+            ]
+          },
+          {
+            "group": "Use a computer",
+            "pages": [
+              "guides/browser",
+              "guides/native-desktop",
+              "guides/blender",
+              "guides/pdf",
+              "guides/workspace",
+              "guides/file-transfers",
+              "guides/credentials",
+              "guides/forks",
+              "guides/preview"
+            ]
+          },
+          {
+            "group": "Connect your application",
+            "pages": [
+              "integrations/host",
+              "integrations/console"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Deploy & operate",
+        "groups": [
+          {
+            "group": "Install",
+            "pages": [
+              "deployment/local-linux",
+              "deployment/gcp",
+              "deployment/images"
+            ]
+          },
+          {
+            "group": "Operate",
+            "pages": [
+              "operations/lifecycle",
+              "operations/host-lifecycle",
+              "operations/security",
+              "operations/capacity",
+              "operations/troubleshooting"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "Contracts",
+            "pages": [
+              "reference/configuration",
+              "reference/cli",
+              "reference/tools",
+              "reference/http-api",
+              "reference/worker-protocol",
+              "reference/compatibility"
+            ]
+          },
+          {
+            "group": "Contribute",
+            "pages": [
+              "development/contributing",
+              "development/verification",
+              "development/future-action-review"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/lukacf/meerkat-computer"
+    }
+  }
+}

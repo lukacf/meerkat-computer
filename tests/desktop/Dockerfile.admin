@@ -1,0 +1,9 @@
+ARG DESKTOP_TEST_IMAGE=meerkat-computer-desktop-test:local
+FROM ${DESKTOP_TEST_IMAGE}
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends sudo \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --uid 10002 meerkat-computer
+COPY src/backend.rs ./src/backend.rs
+COPY tests/desktop/sudo_smoke.py ./tests/desktop/sudo_smoke.py
+ENTRYPOINT ["python", "tests/desktop/sudo_smoke.py"]

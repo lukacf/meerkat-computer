@@ -1,0 +1,14 @@
+{
+  "owner": {
+    "kind": "identity",
+    "realm": "home",
+    "namespace": "mob:household",
+    "identity": "researcher"
+  },
+  "slot": "main",
+  "profile": "browser",
+  "session_id": "host-resolved-current-session",
+  "runtime_generation": 1,
+  "ttl_seconds": 3600,
+  "takeover": false
+}

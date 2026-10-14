@@ -1,0 +1,71 @@
+---
+title: "A computer for every agent"
+description: "Persistent workspaces, browser and desktop tools, and explicit control on infrastructure you own."
+icon: "desktop"
+---
+
+Give an agent a computer it can return to. Change the model, restart a session,
+or hand work to a new execution while keeping that identity's files, browser
+profile and installed applications.
+
+Meerkat Computer runs an Incus pool on your Linux server or a private GCP host.
+Meerkat owns the agent loop. This package owns computer assignments, control
+grants and the tools that operate each guest.
+
+<CardGroup cols={2}>
+  <Card title="Connect your first computer" icon="bolt" href="/quickstart">
+    Build from source, attach one identity, and expose its tools.
+  </Card>
+  <Card title="Prepare a host" icon="server" href="/deployment/local-linux">
+    Use your Linux server or deploy the same pool on GCP.
+  </Card>
+</CardGroup>
+
+## One identity, a lasting workspace
+
+~~~mermaid
+%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#fff4e0", "primaryBorderColor": "#A46921", "primaryTextColor": "#2b241c", "lineColor": "#A46921", "fontSize": "16px"}}}%%
+flowchart TB
+    Identity["Agent identity + slot"] --> Computer["Persistent computer"]
+    Session["Current execution"] --> Grant["Expiring control grant"]
+    Grant --> Computer
+    Computer --> Browser["Browser"]
+    Computer --> Desktop["Native desktop"]
+    Computer --> Files["Shell and files"]
+~~~
+
+The host selects a canonical identity and issues a grant for the current
+execution. Models receive computer tools, without choosing owners or seeing
+infrastructure credentials. One execution controls a computer at a time.
+
+## Choose how much computer to give
+
+| Work | Profile capabilities | Interaction |
+| --- | --- | --- |
+| Web research and forms | Browser, screenshots, browser semantics | Page elements and viewport input |
+| Coding and artifacts | Add files and exec | Workspace files and guest shell |
+| Native applications | Add desktop and desktop semantics | AT-SPI, screen input and app launch |
+| Administrative work | Exec plus `guest_admin = true` | Passwordless sudo inside the assigned guest |
+
+Containers prioritize density. VMs add a separate kernel and support
+[explicit full-state forks](/guides/forks). Both use the same broker and model tools.
+
+## Designed for an embedding product
+
+- **Identity ownership by default.** A session can change without replacing the computer.
+- **Explicit authority.** Short-lived grants fence old controllers; operators retain recovery access.
+- **Observed effects.** Stale references are refused. Uncertain actions are not silently repeated.
+- **Ordinary integration.** Use native MCP or the Python host client. Console previews use MCP Apps.
+- **Infrastructure you control.** No hosted control service is required; model execution stays with Meerkat.
+
+<Note>
+Install from source or use a candidate supplied by your operator. No package
+registry installation is required. Qualify your own host before production use.
+See [compatibility](/reference/compatibility) and [verification](/development/verification).
+</Note>
+
+<CardGroup cols={3}>
+  <Card title="Computer use" icon="computer-mouse" href="/guides/browser">Browser, native apps and programming tools.</Card>
+  <Card title="Trust and credentials" icon="key" href="/operations/security">Agent authority, operator access and website logins.</Card>
+  <Card title="Console integration" icon="window-maximize" href="/integrations/console">Inline previews using saved agent screenshots.</Card>
+</CardGroup>

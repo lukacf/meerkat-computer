@@ -1,0 +1,59 @@
+---
+title: "Architecture and boundaries"
+description: "A library-owned control plane, a mechanical MCP adapter, and a worker inside each guest."
+icon: "layer-group"
+---
+
+Meerkat Computer adds resources to an agent runtime. It does not select models,
+schedule agent turns or decide whether a task succeeded.
+
+~~~mermaid
+flowchart TB
+    Host["Meerkat or product host\nIdentity, session, policy"] --> Adapter["MCP adapter or Python client"]
+    Adapter --> Broker["Rust broker\nAssignments, grants, receipts"]
+    Adapter -. "Optional" .-> Gateway["Always-on gateway\nHost power and private forwarding"]
+    Gateway --> Broker
+    Operator["Trusted operator"] --> Broker
+    Broker --> Incus["Incus on Linux\nOwnership and resource checks"]
+    Incus --> Guest["Container or VM"]
+    Broker --> Worker["Private guest worker\nBrowser, desktop, workspace"]
+    Guest --- Worker
+~~~
+
+| Component | Responsibility |
+| --- | --- |
+| Application host | Canonical identities, eligible agents, models, approvals, session resume and image-forwarding policy |
+| Rust library and broker | Computer assignments, exclusive grants, lifecycle admission and durable receipts |
+| Optional demand gateway | Outer-host wake, request quiescence and idle suspension; broker credentials pass through unchanged |
+| Incus backend | Exact instance effects and evidence of readiness, ownership and incarnation |
+| Guest worker | Browser, AT-SPI/X11 desktop, shell and files |
+| MCP adapter | Tool and content projection for one binding |
+| Computer Lab | Benchmark scenarios, evaluator truth, APS, game moves and model comparisons |
+
+The broker library uses the Meerkat machine DSL for lifecycle authority.
+Protocol adapters do not maintain independent lifecycle decisions.
+
+## Same pool model, different host
+
+A local Linux server and a GCP VM run the same Incus backend. The GCP helper
+provisions the outer host separately. Guest images contain the worker and
+applications, not model-provider credentials or a second agent runtime.
+
+The optional [demand gateway](/operations/host-lifecycle) runs outside that host
+on an always-on machine. It coordinates one host's power state, while the broker
+continues to own every guest assignment and grant. Background work after a tool
+response requires an explicit suspension inhibit or a disabled autosuspend policy.
+
+One broker owns a pool. Its state directory needs durable local filesystem
+semantics and a single writer. Multiple brokers with different state directories
+are not a distributed admission controller.
+
+## Effects are recorded, not guessed
+
+The broker and worker admit an action before performing it. A confirmed duplicate
+action ID returns the saved receipt; changed arguments for that ID are rejected.
+An uncertain operation becomes `unknown_effect` and is not silently retried.
+
+Guest root can alter its own worker and journal. These receipts coordinate normal
+operation; adversarial benchmark evidence must be collected outside the guest.
+See [security](/operations/security) and [worker protocol](/reference/worker-protocol).

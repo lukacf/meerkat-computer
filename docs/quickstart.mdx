@@ -1,0 +1,161 @@
+---
+title: "Connect your first computer"
+description: "Build the package and attach a trusted identity to an existing pool."
+icon: "bolt"
+---
+
+This walkthrough connects a controller to a configured Incus broker. If you do
+not have a pool yet, complete [local Linux setup](/deployment/local-linux) or
+[GCP setup](/deployment/gcp) first. A browser can run in a container; VM profiles
+require KVM on the host.
+
+## 1. Prepare the controller
+
+The controller can run separately from the Linux host. Both paths below leave
+the operator and MCP adapter in the source directory's `.venv/bin`.
+
+<Tabs>
+<Tab title="Build from source">
+
+Requirements: Git, `rustup` with the pinned Rust 1.94.1 toolchain,
+Python 3.11 or newer, and `uv`.
+
+~~~bash
+git clone https://github.com/lukacf/meerkat-computer.git
+cd meerkat-computer
+uv sync --locked
+make build
+computer_target="$(./scripts/repo-cargo --print-env | sed -n 's/^CARGO_TARGET_DIR=//p')"
+install -m 755 "$computer_target/debug/rkat-computer" .venv/bin/rkat-computer
+~~~
+
+</Tab>
+<Tab title="Install a candidate artifact">
+
+Start with a candidate provided by your operator. Follow
+[artifact verification and wheel installation](https://github.com/lukacf/meerkat-computer/blob/main/RELEASING.md#install-an-artifact)
+to check its manifest/checksums and install the wheel with the source archive's
+locked dependencies. From that extracted source directory, install the supplied
+operator for your OS and architecture:
+
+~~~bash
+install -m 755 /absolute/path/to/rkat-computer-VERSION-TARGET .venv/bin/rkat-computer
+~~~
+
+`VERSION-TARGET` is the artifact name from its manifest. There is no public
+registry installation implied by this path.
+
+</Tab>
+</Tabs>
+
+Check the installed entrypoints:
+
+~~~bash
+.venv/bin/rkat-computer --version
+.venv/bin/meerkat-computer-mcp --help
+~~~
+
+These commands prepare a controller. They do not create a cloud host or guest.
+Use [verification commands](/development/verification) to qualify your candidate.
+
+## 2. Reach the broker privately
+
+The default broker URL is `http://127.0.0.1:18760`. On a remote Linux server,
+forward that loopback port over SSH. The [GCP helper](/deployment/gcp) provides
+an ownership-checked IAP tunnel.
+
+This CLI walkthrough uses a direct broker tunnel. To wake a sleeping outer host
+automatically, follow the [demand gateway](/operations/host-lifecycle) setup and
+its Python client flow; the Rust operator commands do not send the gateway token.
+
+The trusted controller needs the operator credential in
+`MEERKAT_COMPUTER_OPERATOR_TOKEN`, or another environment variable selected
+with `--operator-token-env`. Load it from your private operator environment.
+Do not put it in a tool definition, prompt, URL or guest.
+
+~~~bash
+.venv/bin/rkat-computer list
+~~~
+
+An authenticated computer listing confirms access to the broker. It does not
+prove that a new guest can start.
+
+## 3. Write a trusted attachment request
+
+Create a private working directory and copy
+[the identity example](https://github.com/lukacf/meerkat-computer/blob/main/examples/identity-attachment.json)
+to a new request file:
+
+~~~bash
+mkdir -p .state/first-computer
+chmod 700 .state/first-computer
+cp examples/identity-attachment.json .state/first-computer/request.json
+~~~
+
+Edit `.state/first-computer/request.json`, replacing identifiers with canonical
+values from your host:
+
+~~~json
+{
+  "owner": {
+    "kind": "identity",
+    "realm": "research",
+    "namespace": "agents",
+    "identity": "discovery"
+  },
+  "slot": "main",
+  "profile": "browser",
+  "session_id": "your-current-session-id",
+  "runtime_generation": 1,
+  "ttl_seconds": 3600,
+  "takeover": false
+}
+~~~
+
+The profile must exist on the broker. Session ownership is also available; see
+[ownership and grants](/concepts/ownership). A model must not fill these fields.
+
+~~~bash
+.venv/bin/rkat-computer attach \
+  --request .state/first-computer/request.json \
+  --binding-file .state/first-computer/binding.json
+~~~
+
+The CLI creates a new mode-0600 binding file and refuses to overwrite
+one. Successful attachment returns only after guest readiness and grant installation.
+
+## 4. Register the execution's MCP adapter
+
+~~~bash
+.venv/bin/meerkat-computer-mcp \
+  --broker-url http://127.0.0.1:18760 \
+  --binding-file .state/first-computer/binding.json
+~~~
+
+This starts a stdio MCP server; it is not an interactive terminal command.
+Register the same executable and arguments in your model host. The host performs
+the MCP handshake and discovers the tools. See [host integration](/integrations/host)
+for the existing Meerkat SDK attachment sequence.
+
+Ask the agent to call `browser_navigate` with `{"url":"https://example.com"}`,
+inspect the resulting observation,
+and use `computer_act` with the returned observation ID. A fresh `computer_observe`
+should describe the same assigned computer. For a desktop profile, observe
+`{"surface":"desktop"}` instead.
+
+## 5. Finish the execution
+
+~~~bash
+.venv/bin/rkat-computer release \
+  --binding-file .state/first-computer/binding.json
+~~~
+
+Release ends control; it leaves the computer and its disk available to the same
+owner. Use `stop --computer-id COMPUTER_ID` to free running resources immediately.
+The next attachment to the same owner and slot reuses the computer.
+
+<Note>
+The host owns renewal and reconnects. Releasing or closing an MCP process is not
+a substitute for confirming the computer's lifecycle. Continue with
+[operating a pool](/operations/lifecycle).
+</Note>
