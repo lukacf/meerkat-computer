@@ -1315,3 +1315,42 @@ async fn state_directory_is_exclusive_and_corruption_fails_closed() {
         Broker::open_with_worker_and_clock(configuration(&dir), backend, worker, clock).await;
     assert!(corrupt.is_err());
 }
+
+#[tokio::test]
+async fn retirement_rejects_fork_sources_and_children_before_effects() {
+    let dir = TempDir::new().unwrap();
+    let (broker, _, _, _) = broker(&dir).await;
+    let source = broker.attach(request("source", "parent", 0)).await.unwrap();
+    let fork = broker.fork(fork_request(&source)).await.unwrap();
+    for id in std::iter::once(&source.lease.computer_id).chain(fork.children.iter()) {
+        broker.stop(id).await.unwrap();
+        let row = broker
+            .list_computers()
+            .await
+            .into_iter()
+            .find(|row| &row.computer_id == id)
+            .unwrap();
+        let error = broker
+            .retire(
+                id,
+                meerkat_computer::RetirementRequest {
+                    owner: row.owner,
+                    slot: row.slot,
+                    profile: row.profile,
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("fork-related"));
+        assert_eq!(
+            broker
+                .list_computers()
+                .await
+                .into_iter()
+                .find(|row| &row.computer_id == id)
+                .unwrap()
+                .phase,
+            "stopped"
+        );
+    }
+}

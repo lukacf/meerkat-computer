@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 machine! {
     machine ComputerLifecycle {
-        version: 1,
+        version: 2,
         rust: "meerkat-computer" / "machine",
         state {
             phase: ComputerPhase,
@@ -15,8 +15,8 @@ machine! {
             last_active_ms: u64,
         }
         init(Stopped) { epoch = 0, expires_at_ms = 0, last_active_ms = 0 }
-        terminal []
-        phase ComputerPhase { Stopped, Preparing, Leased, Idle, Revoking, Stopping, Faulted, Forking }
+        terminal [Retired]
+        phase ComputerPhase { Stopped, Preparing, Leased, Idle, Revoking, Stopping, Faulted, Forking, Retiring, Retired, RetirementUnknown }
         input ComputerInput {
             ReserveFork { now_ms: u64 },
             ForkReady { now_ms: u64 },
@@ -27,17 +27,20 @@ machine! {
             Touch { epoch: u64, now_ms: u64 },
             Revoke { now_ms: u64 },
             Fenced { epoch: u64 },
+            Retire { now_ms: u64 },
+            Retired { epoch: u64 },
             Stop { now_ms: u64 },
             Stopped { epoch: u64 },
             Failed { epoch: u64 },
             Recover { now_ms: u64 },
             Reap { now_ms: u64, idle_ms: u64 },
         }
-        effect ComputerEffect { StartBackend, InstallWorkerGrant, FenceWorker, StopBackend }
+        effect ComputerEffect { StartBackend, InstallWorkerGrant, FenceWorker, StopBackend, DestroyBackend }
         disposition StartBackend => external seam NoOwnerRealization,
         disposition InstallWorkerGrant => external seam NoOwnerRealization,
         disposition FenceWorker => external seam NoOwnerRealization,
         disposition StopBackend => external seam NoOwnerRealization,
+        disposition DestroyBackend => external seam NoOwnerRealization,
         invariant epoch_in_use_is_positive {
             self.phase != Phase::Leased || self.epoch > 0
         }
@@ -117,9 +120,70 @@ machine! {
             update {}
             to Idle
         }
+        transition RetireStoppedComputer {
+            on input Retire { now_ms }
+            guard { self.phase == Phase::Stopped && self.epoch < 9223372036854775807 }
+            update { self.epoch += 1; self.expires_at_ms = 0; self.last_active_ms = now_ms; }
+            to Retiring
+            emit DestroyBackend
+        }
+        transition ConfirmRetirement {
+            on input Retired { epoch }
+            guard { self.phase == Phase::Retiring && self.epoch == epoch }
+            update {}
+            to Retired
+        }
+        transition RepeatConfirmedRetirement {
+            on input Retire { now_ms }
+            guard { self.phase == Phase::Retired }
+            update {}
+            to Retired
+        }
+        transition RetirementFailed {
+            on input Failed { epoch }
+            guard { self.phase == Phase::Retiring && self.epoch == epoch }
+            update { self.expires_at_ms = 0; }
+            to RetirementUnknown
+        }
+        transition RecoverInterruptedRetirement {
+            on input Recover { now_ms }
+            guard { self.phase == Phase::Retiring }
+            update { self.expires_at_ms = 0; }
+            to RetirementUnknown
+        }
+        transition RecoverUnknownRetirement {
+            on input Recover { now_ms }
+            guard { self.phase == Phase::RetirementUnknown }
+            update {}
+            to RetirementUnknown
+        }
+        transition RecoverRetired {
+            on input Recover { now_ms }
+            guard { self.phase == Phase::Retired }
+            update {}
+            to Retired
+        }
+        transition ReapRetiring {
+            on input Reap { now_ms, idle_ms }
+            guard { self.phase == Phase::Retiring }
+            update {}
+            to Retiring
+        }
+        transition ReapRetirementUnknown {
+            on input Reap { now_ms, idle_ms }
+            guard { self.phase == Phase::RetirementUnknown }
+            update {}
+            to RetirementUnknown
+        }
+        transition ReapRetired {
+            on input Reap { now_ms, idle_ms }
+            guard { self.phase == Phase::Retired }
+            update {}
+            to Retired
+        }
         transition StopComputer {
             on input Stop { now_ms }
-            guard { self.epoch < 9223372036854775807 }
+            guard { self.epoch < 9223372036854775807 && self.phase != Phase::Retiring && self.phase != Phase::Retired && self.phase != Phase::RetirementUnknown }
             update { self.epoch += 1; self.expires_at_ms = 0; self.last_active_ms = now_ms; }
             to Stopping
             emit StopBackend
@@ -132,7 +196,7 @@ machine! {
         }
         transition RecordFailure {
             on input Failed { epoch }
-            guard { self.epoch == epoch && self.phase != Phase::Stopped }
+            guard { self.epoch == epoch && self.phase != Phase::Stopped && self.phase != Phase::Retiring && self.phase != Phase::Retired && self.phase != Phase::RetirementUnknown }
             update { self.expires_at_ms = 0; }
             to Faulted
         }
@@ -144,7 +208,7 @@ machine! {
         }
         transition RecoverUncertain {
             on input Recover { now_ms }
-            guard { self.phase != Phase::Stopped && self.epoch < 9223372036854775807 }
+            guard { self.phase != Phase::Stopped && self.phase != Phase::Retiring && self.phase != Phase::Retired && self.phase != Phase::RetirementUnknown && self.epoch < 9223372036854775807 }
             update { self.epoch += 1; self.expires_at_ms = 0; self.last_active_ms = now_ms; }
             to Faulted
         }
@@ -195,6 +259,9 @@ enum ComputerPhaseSerde {
     Stopping,
     Faulted,
     Forking,
+    Retiring,
+    Retired,
+    RetirementUnknown,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

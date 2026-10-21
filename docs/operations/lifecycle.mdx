@@ -63,5 +63,13 @@ the active execution. A force-stop can lose unsaved work; use it as an explicit
 operator recovery decision after verifying the target.
 
 The broker does not automatically delete idle disks or abandoned fork resources.
-Account for them before manual removal. See [security](/operations/security)
-and [fork recovery](/guides/forks#failure-and-recovery).
+Trusted hosts may explicitly retire a stopped, unleased non-fork assignment through
+`POST /v1/computers/{computer_id}/retire` with its exact `owner`, `slot` and `profile`.
+There is no agent retirement tool. See the [retirement contract](/reference/http-api#explicit-retirement).
+
+For an ephemeral pool, count active, stopped and uncertain assignments against
+retained capacity. Exclude only confirmed `retired` tombstones with no lease.
+Retirement frees the guest disk, not broker evidence or transfer artifacts. An
+unknown retirement stays quarantined and must not be retried automatically.
+Fork sources and children still need their separate recovery/retention procedure.
+See [security](/operations/security) and [fork recovery](/guides/forks#failure-and-recovery).

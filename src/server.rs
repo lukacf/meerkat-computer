@@ -11,7 +11,7 @@ use axum::{
 };
 use meerkat_computer::{
     AttachmentRequest, Broker, BrokerError, CallRequest, ComputerOwner, CredentialFulfillment,
-    ForkRequest, ForkView, OperatorAccess, credentials::CredentialDraft,
+    ForkRequest, ForkView, OperatorAccess, RetirementRequest, credentials::CredentialDraft,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -42,6 +42,7 @@ pub fn router(broker: Arc<Broker>, operator_token: &str) -> Router {
         .route("/v1/computers/{computer_id}/access", get(access))
         .route("/v1/computers/{computer_id}/preview", get(preview))
         .route("/v1/computers/{computer_id}/stop", post(stop))
+        .route("/v1/computers/{computer_id}/retire", post(retire))
         .route(
             "/v1/computers/{computer_id}/files",
             get(file_list).post(file_stage),
@@ -294,6 +295,26 @@ async fn stop(
         .await
         .map_err(HttpError::for_operator)?;
     Ok(Json(json!({"stopped": id})))
+}
+async fn retire(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    body: Result<Json<RetirementRequest>, JsonRejection>,
+) -> Result<Json<Value>, HttpError> {
+    operator(&state, &headers)?;
+    let request = private_json(body)?;
+    let target = id.clone();
+    // A disconnected caller cannot cancel a dispatched destruction.
+    let task = tokio::spawn(async move { state.broker.retire(&target, request).await });
+    task.await
+        .map_err(|_| {
+            HttpError::from(BrokerError::unknown(
+                "retirement interrupted; inspect the computer before further action",
+            ))
+        })?
+        .map_err(HttpError::for_operator)?;
+    Ok(Json(json!({"retired": id})))
 }
 async fn access(
     State(state): State<AppState>,

@@ -469,6 +469,12 @@ fn confirmed_response(path: &str, status: StatusCode, value: &serde_json::Value)
         "/v1/credentials/unassign" => value.get("unassigned") == Some(&json!(true)),
         p if p.ends_with("/resume-source") => value.get("source_resumed") == Some(&json!(true)),
         p if p.ends_with("/stop") => value.get("stopped").is_some_and(|v| v.is_string()),
+        p if p.starts_with("/v1/computers/") && p.ends_with("/retire") => value
+            .get("retired")
+            .and_then(|v| v.as_str())
+            .is_some_and(|id| {
+                p == format!("/v1/computers/{id}/retire") && uuid::Uuid::parse_str(id).is_ok()
+            }),
         p if p.starts_with("/v1/credential") => {
             serde_json::from_value::<crate::credentials::CredentialMetadata>(value.clone()).is_ok()
                 || value.get("deleted").is_some_and(|v| v.is_string())

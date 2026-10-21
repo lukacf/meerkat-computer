@@ -21,11 +21,13 @@ use subtle::ConstantTimeEq;
 use tokio::sync::Mutex;
 mod fork;
 mod preview;
+mod retirement;
 mod secure;
 pub(crate) mod transfers;
 pub(crate) use fork::ForkRecord;
 pub use fork::{ForkRequest, ForkTarget, ForkView};
 pub(crate) use preview::PreviewSource;
+pub use retirement::RetirementRequest;
 pub(crate) use secure::SecureRequestRecord;
 pub use secure::{CredentialFulfillment, SecureInputDelivery, SecureInputTarget};
 pub(crate) use transfers::FileRecord;
@@ -1374,7 +1376,9 @@ impl Broker {
                             self.finish_stop_locked(&id).await?;
                             stopped.push(id.clone());
                         }
-                        ComputerEffect::StartBackend | ComputerEffect::InstallWorkerGrant => {
+                        ComputerEffect::StartBackend
+                        | ComputerEffect::InstallWorkerGrant
+                        | ComputerEffect::DestroyBackend => {
                             return Err(BrokerError::storage("reap emitted an unrelated effect"));
                         }
                     }
