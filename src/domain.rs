@@ -380,6 +380,9 @@ impl HttpWorkerClient {
             client: reqwest::Client::builder()
                 .no_proxy()
                 .redirect(reqwest::redirect::Policy::none())
+                // A worker can close an idle connection as the next effectful
+                // POST is sent. Use fresh connections, never retry that ambiguity.
+                .pool_max_idle_per_host(0)
                 .connect_timeout(Duration::from_secs(10))
                 .timeout(Duration::from_secs(135))
                 .build()
