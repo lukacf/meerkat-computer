@@ -13,6 +13,11 @@ Initial release candidate:
   the path has a 15-second input deadline and bounded release cleanup. Existing
   straight drags are unchanged, and browser actions reject the desktop-only
   field. Matching broker, adapter and guest worker versions are required.
+- Operators can explicitly retire a stopped, unleased non-fork assignment by
+  matching its saved owner, slot and profile. Destruction intent is durable;
+  confirmed removal leaves a terminal tombstone, while uncertainty blocks retry
+  and reattachment. The new persisted retirement phases require a compatible
+  broker when rolling back. Retirement is not a purge of retained evidence.
 - Core machine dependencies and the SDK example now target the published
   Meerkat 0.9.0 release. Native Console acceptance targets released Meta 0.9.0
   with its new crate layout, RPC names and owning identity handle.

@@ -208,7 +208,12 @@ an operation whose effect was uncertain. Do not copy credentials or control
 bindings into a release artifact or a new guest image.
 
 Validate configuration and protocol compatibility against the target version
-before rollback. Restore the prior binary/wheel/config as a unit. A release
+before rollback. Brokers predating explicit retirement cannot read persisted
+`retiring`, `retired` or `retirement_unknown` records. Once these phases are
+present, keep a broker that supports them; do not downgrade to an incompatible
+binary or delete tombstones and uncertain records to make it start.
+
+Restore a compatible prior binary/wheel/config as a unit. A release
 rollback is not permission to overwrite current broker state or recover an old
 grant. See [AUTH.md](AUTH.md) and [CREDENTIALS.md](CREDENTIALS.md) for fencing,
 host authority and credential delivery.
