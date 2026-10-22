@@ -16,6 +16,7 @@ MAX_SCREENSHOT_BYTES = 8_000_000
 MAX_COMMAND_TIMEOUT = 104.0
 MAX_TOPOLOGY_WINDOWS = 512
 MAX_VISUAL_FENCE_SECONDS = 5.0
+MAX_DRAG_PATH_SECONDS = 15.0
 
 
 @dataclass(frozen=True)
@@ -394,14 +395,40 @@ class X11:
                     negative if delta < 0 else positive,
                 )
 
-    async def drag(self, start: tuple[int, int], end: tuple[int, int], button: str = "left"):
+    async def drag(
+        self, start: tuple[int, int], end: tuple[int, int], button: str = "left",
+        *, path: list[tuple[int, int]] | None = None,
+    ):
         button_id = {"left": "1", "middle": "2", "right": "3"}[button]
-        await self.move(*start)
         # Release even when cancellation interrupts the down acknowledgement itself.
+        pressed = False
         try:
-            await self.command("mousedown", button_id)
-            for step in range(1, 9):
-                await self.move(*(round(a + (b - a) * step / 8) for a, b in zip(start, end)))
-                await asyncio.sleep(0.015)
+            async with asyncio.timeout(MAX_DRAG_PATH_SECONDS if path is not None else None):
+                await self.move(*start)
+                pressed = True
+                await self.command("mousedown", button_id)
+                previous = start
+                for destination in [*(path or ()), end]:
+                    for step in range(1, 9):
+                        await self.move(*(
+                            round(a + (b - a) * step / 8)
+                            for a, b in zip(previous, destination)
+                        ))
+                        await asyncio.sleep(0.015)
+                    previous = destination
         finally:
-            await asyncio.shield(self.command("mouseup", button_id))
+            if pressed:
+                # Repeated cancellation must not release the worker lock while
+                # this bounded button-up command is still in flight.
+                release = asyncio.create_task(self.command("mouseup", button_id))
+                cancelled = False
+                while True:
+                    try:
+                        await asyncio.shield(release)
+                        break
+                    except asyncio.CancelledError:
+                        if release.cancelled():
+                            raise
+                        cancelled = True
+                if cancelled:
+                    raise asyncio.CancelledError

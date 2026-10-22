@@ -418,6 +418,8 @@ class Desktop:
             self.point(action.x, action.y)
         if action.type == "drag":
             self.point(action.end_x, action.end_y)
+            for point in action.path or ():
+                self.point(point.x, point.y)
         if action.key:
             x11_key(action.key)
         if getattr(action, "button", "left") not in {"left", "middle", "right"} or getattr(
@@ -455,6 +457,10 @@ class Desktop:
                     reasons=("accessibility_events",),
                 )
             if action.type == "drag":
+                for point in action.path or ():
+                    await self.verify_input_context(
+                        checked, self.point(point.x, point.y), allow_visual=True
+                    )
                 await self.verify_input_context(
                     checked, self.point(action.end_x, action.end_y), allow_visual=True
                 )
@@ -491,6 +497,8 @@ class Desktop:
         if action.type in {"click", "drag", "scroll"}:
             await self.verify_input_context(checked, self.center(node))
         if action.type == "drag":
+            for point in action.path or ():
+                await self.verify_input_context(checked, self.point(point.x, point.y))
             await self.verify_input_context(checked, self.point(action.end_x, action.end_y))
         if action.type == "key" and action.key in {"Tab", "Shift+Tab"}:
             await self.verify_input_context(checked, navigation=True)
@@ -706,10 +714,15 @@ class Desktop:
                     else:
                         await self.x11.key(action.key)
             elif action.type == "drag":
+                path = (
+                    {"path": [self.point(item.x, item.y) for item in action.path]}
+                    if action.path is not None else {}
+                )
                 await self.x11.drag(
                     point,
                     self.point(action.end_x, action.end_y),
                     button=getattr(action, "button", "left"),
+                    **path,
                 )
             self.record("ui_commands")
             content = await self.observe()

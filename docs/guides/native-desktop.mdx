@@ -35,6 +35,32 @@ Desktop coordinates are screen pixels, including window decorations and native
 dialogs. Ref-based input checks the current native target and owning window.
 Applications can still change asynchronously; this is not an atomic desktop transaction.
 
+Desktop `drag` supports an optional `path` of 1-64 intermediate `{x, y}`
+screen-pixel waypoints between the existing start and `end_x`/`end_y`. The button
+stays held through the complete path and is released once at the end. All points
+must pass the current observation and input-context checks before input begins.
+
+```json
+{
+  "observation_id": "returned-observation-id",
+  "action": {
+    "type": "drag",
+    "x": 100,
+    "y": 100,
+    "path": [{"x": 200, "y": 100}, {"x": 200, "y": 200}],
+    "end_x": 300,
+    "end_y": 200
+  }
+}
+```
+
+The complete path has a 15-second input deadline, followed by bounded button
+release cleanup. Cancellation or a lost acknowledgement can leave an unknown
+effect; observe again and do not replay it. One acknowledged path counts as one
+UI command, independently of how the application interprets the gesture.
+Omitting `path` preserves the ordinary straight drag. Browser-surface actions
+reject `path` before input; it is currently supported only on the desktop.
+
 ## Choose the right channel
 
 AT-SPI coverage depends on the application. Availability, partial coverage and
