@@ -958,3 +958,26 @@ async fn only_file_staging_accepts_large_raw_bodies_and_exports_stay_binary() {
     assert_eq!(host_status(&g).await["inhibited"], false);
     server.abort();
 }
+
+#[tokio::test]
+async fn exact_retirement_receipt_settles_but_wrong_id_remains_unknown() {
+    let id = "d34e7499-e61b-46ae-8ac0-2f04249d513d";
+    let path = format!("/v1/computers/{id}/retire");
+    for (reply, expected_inhibited) in [(id, false), ("wrong-id", true)] {
+        let app = Router::new().route(
+            &path,
+            post(move || async move { axum::Json(serde_json::json!({"retired": reply})) }),
+        );
+        let (g, _, _, _dir, server, _) = fixture_with_app(app).await;
+        assert_eq!(
+            g.router()
+                .oneshot(request(&path, true))
+                .await
+                .unwrap()
+                .status(),
+            200
+        );
+        assert_eq!(host_status(&g).await["inhibited"], expected_inhibited);
+        server.abort();
+    }
+}

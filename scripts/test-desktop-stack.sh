@@ -31,7 +31,9 @@ fi
 # which the unprivileged guest cannot read, so normalize this copy like the image.
 # Host source permissions and private state remain untouched.
 source_stage="$(mktemp -d "${TMPDIR:-/tmp}/meerkat-computer-stack-source.XXXXXX")"
-tar -C "${repo_root}" -cf - python src configs tests/support \
+# One-record writes avoid BSD tar's trailing-padding EPIPE after extraction ends.
+# pipefail still checks both archive creation and extraction.
+tar -b 1 -C "${repo_root}" -cf - python src configs tests/support \
   Cargo.toml Cargo.lock rust-toolchain.toml README.md LICENSE tests/stack.rs \
   scripts/repo-cargo scripts/mcp_smoke.py scripts/preview_smoke.py scripts/credential_smoke.py \
   infra/desktop-session.py \

@@ -1,5 +1,6 @@
 """Observation-fenced Linux desktop driver for an explicitly provisioned guest."""
 
+import asyncio
 import base64
 import json
 import math
@@ -17,15 +18,22 @@ from .desktop_atspi import (
     Node,
     Tree,
 )
-from .desktop_x11 import X11, DisplayState, FocusedVisualFence, x11_key
+from .desktop_x11 import (
+    MAX_VISUAL_FENCE_SECONDS,
+    X11,
+    DesktopTopology,
+    DisplayState,
+    FocusedVisualFence,
+    x11_key,
+)
 from .observation import Projection, desktop_projection
 from .protocol import Lease, WorkerError
 
 
 @dataclass(frozen=True)
 class Fence:
-    revision: int
-    accessibility_available: bool
+    revision: int | None
+    accessibility_available: bool | None
     screen: DisplayState
 
 
@@ -49,6 +57,7 @@ class Desktop:
         self.observation_window_revisions: dict[tuple[str, str], int] = {}
         self.observation_tree = Tree()
         self.observation_visual: FocusedVisualFence | None = None
+        self.observation_topology: DesktopTopology | None = None
         self.refs: dict[str, Node] = {}
         self.ref_windows: dict[str, Node] = {}
         self.metric_sink = None
@@ -115,6 +124,7 @@ class Desktop:
         self.observation_window_revisions = {}
         self.observation_tree = Tree()
         self.observation_visual = None
+        self.observation_topology = None
         self.refs = {}
         self.ref_windows = {}
 
@@ -134,12 +144,11 @@ class Desktop:
 
     async def signature(self) -> Fence:
         screen = await self.x11.state()
-        revision = (
-            self.accessibility.revision
-            if self.lease.observation.mode == "visual"
-            else self.accessibility.structural_revision
-        )
-        return Fence(revision, self.accessibility.available, screen)
+        if self.lease.observation.mode == "visual":
+            # A screenshot grants no semantic target. Native window topology,
+            # not unrelated AT-SPI activity, fences visual input below.
+            return Fence(None, None, screen)
+        return Fence(self.accessibility.structural_revision, self.accessibility.available, screen)
 
     def signature_changes(self, current: Fence) -> tuple[str, ...]:
         previous = self.observation_signature
@@ -352,6 +361,42 @@ class Desktop:
                 reasons=tuple(sorted(changed)),
             )
 
+    async def verify_visual_input(self, action):
+        """Bind visual input to native window topology, not immutable canvas pixels."""
+        if action.type == "scroll" and action.x is None:
+            raise WorkerError(
+                "invalid_coordinates",
+                "Visual desktop scrolling requires screen coordinates",
+                422,
+            )
+        previous = self.observation_topology
+        reasons = ()
+        if previous is None:
+            reasons = ("visual_unavailable",)
+        else:
+            try:
+                # At most two bounded topology reads per validation, regardless
+                # of the number of drag points. No screenshot or semantic read.
+                async with asyncio.timeout(MAX_VISUAL_FENCE_SECONDS):
+                    before = await self.x11.desktop_topology()
+                    after = await self.x11.desktop_topology()
+                    current = await self.signature()
+                reasons = self.signature_changes(current)
+                if before is None or after is None:
+                    reasons += ("visual_unavailable",)
+                elif before != previous or after != previous:
+                    reasons += ("visual_topology",)
+            except TimeoutError:
+                reasons = ("visual_unavailable",)
+        if reasons:
+            await self.invalidate()
+            raise WorkerError(
+                "stale_observation",
+                "Native desktop window context changed or is unavailable; observe again",
+                reasons=reasons,
+            )
+        self.authorize()
+
     def point(self, x: float, y: float) -> tuple[int, int]:
         size = self.lease.observation
         if (
@@ -418,6 +463,8 @@ class Desktop:
             self.point(action.x, action.y)
         if action.type == "drag":
             self.point(action.end_x, action.end_y)
+            for point in action.path or ():
+                self.point(point.x, point.y)
         if action.key:
             x11_key(action.key)
         if getattr(action, "button", "left") not in {"left", "middle", "right"} or getattr(
@@ -429,6 +476,9 @@ class Desktop:
                 "invalid_action", "Native focus and invoke require an observed ref", 422
             )
         if not action.ref:
+            if self.lease.observation.mode == "visual":
+                await self.verify_visual_input(action)
+                return
             if (
                 "unstable_tree" in self.observation_tree.issues
                 and action.type == "scroll"
@@ -455,6 +505,10 @@ class Desktop:
                     reasons=("accessibility_events",),
                 )
             if action.type == "drag":
+                for point in action.path or ():
+                    await self.verify_input_context(
+                        checked, self.point(point.x, point.y), allow_visual=True
+                    )
                 await self.verify_input_context(
                     checked, self.point(action.end_x, action.end_y), allow_visual=True
                 )
@@ -491,6 +545,8 @@ class Desktop:
         if action.type in {"click", "drag", "scroll"}:
             await self.verify_input_context(checked, self.center(node))
         if action.type == "drag":
+            for point in action.path or ():
+                await self.verify_input_context(checked, self.point(point.x, point.y))
             await self.verify_input_context(checked, self.point(action.end_x, action.end_y))
         if action.type == "key" and action.key in {"Tab", "Shift+Tab"}:
             await self.verify_input_context(checked, navigation=True)
@@ -544,7 +600,11 @@ class Desktop:
                 "coordinate_space": "screen",
                 "screen_origin": {"x": 0, "y": 0},
                 "focused_x11_window": before.screen.focus,
-                "consistency": "target_revalidation_and_structural_events",
+                "consistency": (
+                    "desktop_window_topology"
+                    if observation.mode == "visual"
+                    else "target_revalidation_and_structural_events"
+                ),
             }
             new_refs = {}
             new_windows = {}
@@ -618,15 +678,20 @@ class Desktop:
                 )
             screenshot = None
             visual_fence = None
+            desktop_topology = None
             if observation.mode == "hybrid":
                 screenshot, visual_fence = await self.x11.capture_with_fence()
             elif observation.mode == "visual":
-                screenshot = await self.x11.screenshot()
+                screenshot, desktop_topology = await self.x11.capture_desktop_with_fence()
             self.authorize()
             after = await self.signature()
             if before.screen != after.screen or (not fallback and before != after):
                 continue
             self.authorize()
+            if observation.mode == "visual":
+                body["input"] = {
+                    "status": "observe_only" if desktop_topology is None else "requires_revalidation"
+                }
             if fallback:
                 # Publish pixels even if accessibility changed during capture,
                 # but never turn that unstable interval into input authority.
@@ -642,6 +707,7 @@ class Desktop:
             self.observation_window_revisions = window_revisions
             self.observation_tree = tree
             self.observation_visual = visual_fence
+            self.observation_topology = desktop_topology
             self.refs = new_refs
             self.ref_windows = new_windows
             content = [{"type": "text", "text": json.dumps(body, ensure_ascii=True)}]
@@ -706,10 +772,15 @@ class Desktop:
                     else:
                         await self.x11.key(action.key)
             elif action.type == "drag":
+                path = (
+                    {"path": [self.point(item.x, item.y) for item in action.path]}
+                    if action.path is not None else {}
+                )
                 await self.x11.drag(
                     point,
                     self.point(action.end_x, action.end_y),
                     button=getattr(action, "button", "left"),
+                    **path,
                 )
             self.record("ui_commands")
             content = await self.observe()

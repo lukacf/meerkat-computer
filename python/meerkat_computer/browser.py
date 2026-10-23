@@ -601,6 +601,10 @@ class Browser:
 
     async def validate_action(self, arguments: ActArguments):
         action = arguments.action
+        if action.path is not None:
+            raise WorkerError(
+                "unsupported_action", "Waypoint drag paths require the desktop surface", 422
+            )
         guarded = self.secure is not None and await self.secure.guarded()
         if guarded and (action.type not in {"click", "focus"} or not action.ref):
             raise WorkerError(

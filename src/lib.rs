@@ -15,6 +15,6 @@ pub use config::{
 pub use domain::{
     Attachment, AttachmentRequest, Broker, BrokerError, CallRequest, Clock, ComputerOwner,
     ComputerView, CredentialFulfillment, FileDirection, FileMetadata, ForkRequest, ForkTarget,
-    ForkView, LastBackendFailure, LeaseView, OperatorAccess, SecureInputDelivery,
-    SecureInputTarget, WorkerCallResponse, WorkerClient, WorkerLease,
+    ForkView, LastBackendFailure, LeaseView, OperatorAccess, RetirementRequest,
+    SecureInputDelivery, SecureInputTarget, WorkerCallResponse, WorkerClient, WorkerLease,
 };

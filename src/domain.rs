@@ -21,15 +21,19 @@ use subtle::ConstantTimeEq;
 use tokio::sync::Mutex;
 mod fork;
 mod preview;
+mod retirement;
 mod secure;
 pub(crate) mod transfers;
 pub(crate) use fork::ForkRecord;
 pub use fork::{ForkRequest, ForkTarget, ForkView};
 pub(crate) use preview::PreviewSource;
+pub use retirement::RetirementRequest;
 pub(crate) use secure::SecureRequestRecord;
 pub use secure::{CredentialFulfillment, SecureInputDelivery, SecureInputTarget};
 pub(crate) use transfers::FileRecord;
 pub use transfers::{FileDirection, FileMetadata};
+#[cfg(test)]
+mod drag_path_tests;
 #[cfg(test)]
 mod worker_error_tests;
 
@@ -376,6 +380,9 @@ impl HttpWorkerClient {
             client: reqwest::Client::builder()
                 .no_proxy()
                 .redirect(reqwest::redirect::Policy::none())
+                // A worker can close an idle connection as the next effectful
+                // POST is sent. Use fresh connections, never retry that ambiguity.
+                .pool_max_idle_per_host(0)
                 .connect_timeout(Duration::from_secs(10))
                 .timeout(Duration::from_secs(135))
                 .build()
@@ -1374,7 +1381,9 @@ impl Broker {
                             self.finish_stop_locked(&id).await?;
                             stopped.push(id.clone());
                         }
-                        ComputerEffect::StartBackend | ComputerEffect::InstallWorkerGrant => {
+                        ComputerEffect::StartBackend
+                        | ComputerEffect::InstallWorkerGrant
+                        | ComputerEffect::DestroyBackend => {
                             return Err(BrokerError::storage("reap emitted an unrelated effect"));
                         }
                     }
@@ -1501,7 +1510,8 @@ fn tool_capabilities(name: &str) -> Option<&'static [&'static str]> {
 
 fn tool_definitions() -> Vec<Value> {
     let action = json!({"type":"object","required":["type"],"additionalProperties":false,"properties":{
-        "type":{"type":"string","enum":["click","fill","type","key","scroll","drag","focus","invoke"]},"button":{"type":"string","enum":["left","middle","right"]},"click_count":{"type":"integer","minimum":1,"maximum":2},"action_name":{"type":"string"},"ref":{"type":"string"},"x":{"type":"number"},"y":{"type":"number"},"text":{"type":"string","maxLength":16384},"key":{"type":"string"},"delta_x":{"type":"number","minimum":-10000,"maximum":10000},"delta_y":{"type":"number","minimum":-10000,"maximum":10000},"end_x":{"type":"number"},"end_y":{"type":"number"}
+        "type":{"type":"string","enum":["click","fill","type","key","scroll","drag","focus","invoke"]},"button":{"type":"string","enum":["left","middle","right"]},"click_count":{"type":"integer","minimum":1,"maximum":2},"action_name":{"type":"string"},"ref":{"type":"string"},"x":{"type":"number"},"y":{"type":"number"},"text":{"type":"string","maxLength":16384},"key":{"type":"string"},"delta_x":{"type":"number","minimum":-10000,"maximum":10000},"delta_y":{"type":"number","minimum":-10000,"maximum":10000},"end_x":{"type":"number"},"end_y":{"type":"number"},
+        "path":{"type":"array","minItems":1,"maxItems":64,"description":"Optional intermediate screen-pixel waypoints for a desktop drag, between its start and end_x/end_y. The button stays held through every segment. The complete path has a 15-second input deadline followed by bounded button release. Unsupported on the browser surface or other action types.","items":{"type":"object","required":["x","y"],"additionalProperties":false,"properties":{"x":{"type":"number"},"y":{"type":"number"}}}}
     }});
     vec![
         json!({"name":"computer_files","description":"List metadata for files staged for this computer or exported from it. No file contents or host paths are returned.","annotations":{"readOnlyHint":true,"destructiveHint":false},"inputSchema":{"type":"object","additionalProperties":false,"properties":{}}}),
@@ -1510,7 +1520,7 @@ fn tool_definitions() -> Vec<Value> {
         json!({"name":"browser_upload","description":"Set files on an observed browser file input using absolute guest file paths. Requires a current browser observation and ref. Uploading may disclose these files to the website.","annotations":{"readOnlyHint":false,"destructiveHint":true},"inputSchema":{"type":"object","required":["observation_id","ref","paths"],"additionalProperties":false,"properties":{"observation_id":{"type":"string","minLength":1,"maxLength":128},"ref":{"type":"string","minLength":1,"maxLength":100},"paths":{"type":"array","minItems":1,"maxItems":16,"items":{"type":"string","minLength":1,"maxLength":4096,"pattern":"^/"}}}}}),
         json!({"name":"browser_downloads","description":"List downloaded browser files and their absolute guest paths for computer_download export. Returns metadata only.","annotations":{"readOnlyHint":true,"destructiveHint":false},"inputSchema":{"type":"object","additionalProperties":false,"properties":{}}}),
         json!({"name":"computer_observe","description":"Observe your assigned computer. Choose browser viewport or OS desktop; omission uses the profile default. Compact detail prioritizes useful targets and bounds application text; full detail uses the profile ceilings. Expand a native desktop subtree with a current scope_ref and its observation_id. Each observation replaces prior refs. Use the latest observation_id for the next action.","inputSchema":{"type":"object","properties":{"surface":{"type":"string","enum":["browser","desktop"]},"detail":{"type":"string","enum":["compact","full"]},"max_elements":{"type":"integer","minimum":1,"maximum":300,"description":"Returned element limit, at most the profile ceiling. Compact defaults to 60; full uses the ceiling."},"max_text_chars":{"type":"integer","minimum":256,"maximum":24000,"description":"Application text character budget, at most the profile ceiling. Compact defaults to 6000; full uses the ceiling. Screenshots are separate."},"scope_ref":{"type":"string","minLength":1,"maxLength":100,"description":"Current desktop ref to expand; requires its observation_id. Not supported on the browser surface."},"observation_id":{"type":"string","minLength":1,"maxLength":128,"description":"Observation owning scope_ref; both scope fields must be supplied together."}},"dependentRequired":{"scope_ref":["observation_id"],"observation_id":["scope_ref"]},"additionalProperties":false}}),
-        json!({"name":"computer_act","description":"Perform one UI action against the latest observation. Coordinates use the returned surface: browser viewport or desktop screen pixels. Desktop invoke requires an advertised action_name. Never replay an action with an unknown outcome.","inputSchema":{"type":"object","required":["observation_id","action"],"additionalProperties":false,"properties":{"observation_id":{"type":"string"},"action":action}}}),
+        json!({"name":"computer_act","description":"Perform one UI action against the latest observation. Coordinates use the returned surface: browser viewport or desktop screen pixels. Visual desktop scrolling requires x and y. Desktop invoke requires an advertised action_name. Never replay an action with an unknown outcome.","inputSchema":{"type":"object","required":["observation_id","action"],"additionalProperties":false,"properties":{"observation_id":{"type":"string"},"action":action}}}),
         json!({"name":"computer_apps","description":"List installed native applications or launch one by observed app_id. Launch returns a desktop observation; verify window readiness from observations.","inputSchema":{"type":"object","required":["action"],"additionalProperties":false,"properties":{"action":{"type":"string","enum":["list","launch"]},"app_id":{"type":"string"}}}}),
         json!({"name":"browser_navigate","description":"Navigate the current tab and observe the result.","inputSchema":{"type":"object","required":["url"],"additionalProperties":false,"properties":{"url":{"type":"string"}}}}),
         json!({"name":"browser_tabs","description":"List, create, select or close a browser tab.","inputSchema":{"type":"object","required":["action"],"additionalProperties":false,"properties":{"action":{"type":"string","enum":["list","new","select","close"]},"tab_id":{"type":"string"},"url":{"type":"string"}}}}),

@@ -118,6 +118,11 @@ class ObserveArguments(StrictModel):
         return self
 
 
+class DragPoint(StrictModel):
+    x: float = Field(allow_inf_nan=False)
+    y: float = Field(allow_inf_nan=False)
+
+
 class Action(StrictModel):
     type: Literal["click", "fill", "type", "key", "scroll", "drag", "focus", "invoke"]
     button: Literal["left", "middle", "right"] = "left"
@@ -132,6 +137,7 @@ class Action(StrictModel):
     delta_y: float = Field(default=0, ge=-10000, le=10000)
     end_x: float | None = None
     end_y: float | None = None
+    path: list[DragPoint] | None = Field(default=None, min_length=1, max_length=64)
 
     @model_validator(mode="after")
     def validate_action(self):
@@ -147,6 +153,8 @@ class Action(StrictModel):
             raise ValueError("Action requires key")
         if self.type == "drag" and (self.end_x is None or self.end_y is None):
             raise ValueError("Drag requires end_x and end_y")
+        if self.path is not None and self.type != "drag":
+            raise ValueError("path is only valid for drag")
         if self.type in {"focus", "invoke"} and not self.ref:
             raise ValueError("Semantic action requires a current ref")
         if self.type == "invoke" and not self.action_name:

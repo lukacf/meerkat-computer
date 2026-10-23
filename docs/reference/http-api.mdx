@@ -42,6 +42,7 @@ authorization and guest lifecycle decisions.
 | GET | `/v1/computers/{computer_id}/access` | Verified operator shell arguments |
 | GET | `/v1/computers/{computer_id}/preview` | Current safe cached frame and computer metadata |
 | POST | `/v1/computers/{computer_id}/stop` | Stops the exact owned computer |
+| POST | `/v1/computers/{computer_id}/retire` | Exact `owner`, `slot`, `profile`; destroys a stopped non-fork guest, returns `{retired: computer_id}` |
 | POST | `/v1/reap` | Runs idle cleanup |
 
 An attachment body has `owner`, `slot` (default `main`), `profile`,
@@ -52,6 +53,31 @@ in [ownership](/concepts/ownership).
 The returned binding includes `computer_id`, `lease_id`, `epoch`,
 `expires_at_ms`, `session_id`, `runtime_generation`, `capabilities` and
 the secret `token`. Only the trusted host should receive or store it.
+
+## Explicit retirement
+
+Only the operator can retire an assignment. The request must match its full saved
+owner, slot and immutable profile name; additional authority fields are rejected.
+Stop the guest first and confirm that inventory has phase `stopped` and no lease.
+A control grant cannot call this endpoint. Do not expose it as a model tool.
+
+Retirement persists `retiring` before one backend destruction attempt. Confirmed
+removal becomes `retired`; its tombstone stays in inventory with no lease. Repeating
+the same confirmed request returns the receipt without destroying anything again.
+The retired owner/slot cannot be reattached. Use a fresh trusted identity for a
+new ephemeral guest.
+
+A failed or interrupted attempt becomes `retirement_unknown`, including after
+broker restart. It cannot be retried, reattached or reset through stop/reap.
+Inspect the operator diagnostic and physical inventory before manual recovery.
+Neither a timeout nor an absent reply proves disk removal. The host gateway
+likewise preserves uncertainty until it receives a valid matching receipt.
+
+This endpoint currently excludes every assignment that is a fork source or child,
+and requires a previously confirmed backend incarnation. It deletes the guest
+through the backend's ownership, incarnation and stopped-state checks. Broker
+receipts, cached previews, transfer artifacts, worker credentials and the tombstone
+remain under their existing retention policies; retirement is not a privacy purge.
 
 ## Execution control
 

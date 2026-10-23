@@ -65,3 +65,44 @@ fn version_one_inflight_action_becomes_unknown_on_recovery() {
     assert_eq!(serde_json::to_value(&state).unwrap()["phase"], "unknown");
     assert!(state.apply(ActionInput::Complete).is_err());
 }
+
+#[test]
+fn retirement_snapshot_recovery_never_replays_a_destructive_effect() {
+    for (phase, recovered) in [
+        ("retiring", "retirement_unknown"),
+        ("retirement_unknown", "retirement_unknown"),
+        ("retired", "retired"),
+    ] {
+        let raw =
+            serde_json::json!({"phase":phase,"epoch":9,"expires_at_ms":0,"last_active_ms":100});
+        let mut state: LifecycleSnapshot = serde_json::from_value(raw.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&state).unwrap(), raw);
+        assert!(
+            state
+                .apply_with_effects(ComputerInput::Recover { now_ms: 200 })
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(state.phase_label(), recovered);
+        assert!(
+            state
+                .apply_with_effects(ComputerInput::Reap {
+                    now_ms: 10000,
+                    idle_ms: 0
+                })
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(state.phase_label(), recovered);
+        assert!(state.apply(ComputerInput::Stop { now_ms: 200 }).is_err());
+        assert!(
+            state
+                .apply(ComputerInput::Attach {
+                    now_ms: 200,
+                    expires_at_ms: 400,
+                    takeover: true
+                })
+                .is_err()
+        );
+    }
+}

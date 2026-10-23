@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import hashlib
+import json
 import math
 import os
 import re
@@ -10,12 +11,14 @@ import shutil
 import sys
 from dataclasses import dataclass
 
+from .desktop_topology import validate_snapshot
 from .protocol import WorkerError
 
 MAX_SCREENSHOT_BYTES = 8_000_000
 MAX_COMMAND_TIMEOUT = 104.0
 MAX_TOPOLOGY_WINDOWS = 512
 MAX_VISUAL_FENCE_SECONDS = 5.0
+MAX_DRAG_PATH_SECONDS = 15.0
 
 
 @dataclass(frozen=True)
@@ -33,6 +36,14 @@ class WindowGeometry:
     window_class: str
     map_state: str
     override_redirect: bool
+
+
+@dataclass(frozen=True)
+class DesktopTopology:
+    screen: DisplayState
+    root: int
+    tree: tuple[tuple[str, int, int], ...]
+    windows: tuple[WindowGeometry, ...]
 
 
 @dataclass(frozen=True)
@@ -170,8 +181,20 @@ class X11:
         dimensions = (await self.command("getdisplaygeometry")).strip().split()
         if len(dimensions) != 2 or any(not value.isdecimal() for value in dimensions):
             raise WorkerError("desktop_io_failed", "Invalid desktop dimensions", 503)
-        # Xvfb may have no focused window before the first app starts. xdotool returns 1 (root).
-        focus = (await self.command("getwindowfocus")).strip()
+        try:
+            focus = (await self.command("getwindowfocus")).strip()
+        except WorkerError:
+            # Without a focused client, xdotool's WM_CLASS ancestor lookup can fail.
+            # Recover only a verified native root focus; other lookup errors stay closed.
+            topology = await self.desktop_topology()
+            if (
+                topology is None
+                or int(topology.screen.focus) not in {0, 1, topology.root}
+                or (topology.screen.width, topology.screen.height)
+                != (int(dimensions[0]), int(dimensions[1]))
+            ):
+                raise
+            return topology.screen
         if not focus.isdecimal():
             raise WorkerError("desktop_io_failed", "Desktop focus could not be read", 503)
         return DisplayState(int(dimensions[0]), int(dimensions[1]), focus)
@@ -187,6 +210,9 @@ class X11:
         declared = 0
         for line in output.splitlines():
             count = re.fullmatch(r"(\s*)([0-9]+) child(?:ren)?:", line)
+            if count is None:
+                # xwininfo terminates an empty tree with a period, not a colon.
+                count = re.fullmatch(r"(\s*)(0) children\.", line)
             if count:
                 declared += int(count[2])
                 rows.append(("children", len(count[1]), int(count[2])))
@@ -230,6 +256,54 @@ class X11:
             field("Map State", "IsUnMapped|IsUnviewable|IsViewable"),
             field("Override Redirect State", "yes|no") == "yes",
         )
+
+    async def desktop_topology(self) -> DesktopTopology | None:
+        """Full desktop input context, including root focus and native overlays."""
+        try:
+            output = await self.command(
+                "-m",
+                "meerkat_computer.desktop_topology",
+                _executable=sys.executable,
+                timeout=MAX_VISUAL_FENCE_SECONDS,
+            )
+            return self.parse_desktop_topology(json.loads(output))
+        except (WorkerError, ValueError, TimeoutError):
+            return None
+
+    @staticmethod
+    def parse_desktop_topology(value) -> DesktopTopology:
+        value = validate_snapshot(value)
+        root, tree, windows, depths = value["root"], [], [], {}
+        for window, parent, children, bounds, border, kind, mapped, override in value["nodes"]:
+            depth = 0 if window == root else depths[parent] + 1
+            depths[window] = depth
+            if window != root:
+                tree.append(("window", depth, window))
+            tree.append(("children", depth, len(children)))
+            windows.append(
+                WindowGeometry(
+                    window,
+                    tuple(bounds),
+                    border,
+                    {1: "InputOutput", 2: "InputOnly"}[kind],
+                    {0: "IsUnMapped", 1: "IsUnviewable", 2: "IsViewable"}[mapped],
+                    bool(override),
+                )
+            )
+        return DesktopTopology(
+            DisplayState(*value["size"], str(value["focus"])), root, tuple(tree), tuple(windows)
+        )
+
+    async def capture_desktop_with_fence(self) -> tuple[bytes, DesktopTopology | None]:
+        png = None
+        try:
+            async with asyncio.timeout(MAX_VISUAL_FENCE_SECONDS):
+                before = await self.desktop_topology()
+                png = await self.screenshot()
+                after = await self.desktop_topology()
+                return png, after if before is not None and before == after else None
+        except TimeoutError:
+            return png if png is not None else await self.screenshot(), None
 
     async def focused_topology(self) -> FocusedTopology | None:
         """Read only numeric X11 metadata, including unmanaged/InputOnly children."""
@@ -394,14 +468,43 @@ class X11:
                     negative if delta < 0 else positive,
                 )
 
-    async def drag(self, start: tuple[int, int], end: tuple[int, int], button: str = "left"):
+    async def drag(
+        self,
+        start: tuple[int, int],
+        end: tuple[int, int],
+        button: str = "left",
+        *,
+        path: list[tuple[int, int]] | None = None,
+    ):
         button_id = {"left": "1", "middle": "2", "right": "3"}[button]
-        await self.move(*start)
         # Release even when cancellation interrupts the down acknowledgement itself.
+        pressed = False
         try:
-            await self.command("mousedown", button_id)
-            for step in range(1, 9):
-                await self.move(*(round(a + (b - a) * step / 8) for a, b in zip(start, end)))
-                await asyncio.sleep(0.015)
+            async with asyncio.timeout(MAX_DRAG_PATH_SECONDS if path is not None else None):
+                await self.move(*start)
+                pressed = True
+                await self.command("mousedown", button_id)
+                previous = start
+                for destination in [*(path or ()), end]:
+                    for step in range(1, 9):
+                        await self.move(
+                            *(round(a + (b - a) * step / 8) for a, b in zip(previous, destination))
+                        )
+                        await asyncio.sleep(0.015)
+                    previous = destination
         finally:
-            await asyncio.shield(self.command("mouseup", button_id))
+            if pressed:
+                # Repeated cancellation must not release the worker lock while
+                # this bounded button-up command is still in flight.
+                release = asyncio.create_task(self.command("mouseup", button_id))
+                cancelled = False
+                while True:
+                    try:
+                        await asyncio.shield(release)
+                        break
+                    except asyncio.CancelledError:
+                        if release.cancelled():
+                            raise
+                        cancelled = True
+                if cancelled:
+                    raise asyncio.CancelledError
