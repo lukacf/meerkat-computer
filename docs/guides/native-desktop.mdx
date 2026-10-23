@@ -68,6 +68,29 @@ truncation are reported explicitly. A canvas may have few useful semantics while
 still working through screenshots and input. Use programming interfaces for
 structured work when the application has one.
 
+Visual-only profiles bind input to the observed X11 desktop. Before input,
+the worker rechecks display size, focus, window identities, bounds, mapping and the
+complete native window tree, including unmanaged and InputOnly overlays. All
+coordinates, including every drag waypoint, must stay inside the screen.
+Clicking another app, a launcher or the taskbar, and dragging title bars remain
+supported. Scrolling requires explicit coordinates; keys and text use the current
+focus, including root focus before any app opens.
+Each validation has a five-second deadline, independent of path length. The
+worker validates before admission and again before dispatch, then captures the
+result with a separate five-second topology fence. Initial display/focus reads
+and input execution have their own bounds.
+Each topology snapshot uses one short-lived numeric X11 helper process with a
+512-window traversal limit. A read failure, inconsistent tree or deadline leaves
+the observation unable to authorize input.
+If topology cannot be verified, the screenshot reports `input.status: "observe_only"`.
+
+Game animation and accessibility events do not invalidate visual-only input.
+This does not freeze or verify the meaning of controls drawn inside the same
+native window; the agent must inspect the current screenshot. Native topology
+is deliberately conservative: even a background window being created, moved or
+remapped requires a new observation. This preserves overlay-change detection
+without claiming the desktop is atomic.
+
 If accessibility keeps changing during a hybrid observation, the worker returns
 a fresh screenshot with `accessibility.status: "partial"` and the issue
 `unstable_tree`. It omits semantic elements and refs from that observation.
@@ -80,13 +103,13 @@ drag endpoints must stay inside that window; scrolling needs explicit coordinate
 `observe_only` means the screenshot cannot authorize input. Observe again or
 use another permitted tool. Semantic-only profiles never fall back to screenshots.
 
-Visual fallback compares the focused window's pixels exactly. A cosmetic redraw
+Hybrid visual fallback compares the focused window's pixels exactly. A cosmetic redraw
 can therefore reject input even when the observation ID is current. A rejection
 with effect `none` means no input was submitted; inspect a new observation before
 choosing the next action. This check does not make an asynchronous desktop atomic.
 The provided guest session sets `GTK_OVERLAY_SCROLLING=0` so supported GTK apps
 use stationary scrollbars. This removes overlay scrollbar fading in those apps
-while preserving input validation. Other animations can still invalidate visual input.
+while preserving input validation. Other animations can still invalidate hybrid fallback input.
 Existing guest sessions need the updated launcher and a desktop restart to use
 this default; the host desktop is unaffected.
 

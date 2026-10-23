@@ -47,7 +47,7 @@ Every action requires `type`. `computer_act` wraps it with the latest observatio
 | `fill` | `text` and an appropriate target | Replace editable text |
 | `type` | `text` | Enter text at the selected/focused target |
 | `key` | `key` | Key combination; optional current ref |
-| `scroll` | None beyond type | `delta_x`, `delta_y` default to zero |
+| `scroll` | `x,y` for visual desktop input | `delta_x`, `delta_y` default to zero; other modes may use the current target |
 | `drag` | Start ref or `x,y`; `end_x,end_y` | Screen/viewport coordinates |
 | `focus` | `ref` | Native focus requires a semantic target |
 | `invoke` | `ref`, `action_name` | Exact advertised native action; unsupported in browser |
@@ -56,6 +56,9 @@ Coordinates must include both x and y, and cannot be combined with a ref.
 Button is `left`, `middle` or `right`; click count is 1 or 2.
 Text is limited to 16,384 characters. Scroll deltas range from -10000 to 10000.
 Only invoke accepts `action_name`.
+Visual desktop coordinates, including all drag waypoints, must stay within the
+screen. Native desktop topology is rechecked before input; animated
+pixels inside the same window are not compared.
 
 Changing surface invalidates the preceding observation. Ref-based desktop input
 also checks target freshness and the active owning native window. A failed
