@@ -180,6 +180,9 @@ class FakeX11:
     async def capture_with_fence(self):
         return await self.screenshot(), None
 
+    async def capture_desktop_with_fence(self):
+        return await self.screenshot(), None
+
     async def click(self, x, y, button="left", count=1):
         self.inputs.append(("click", x, y, button, count))
         if self.fail_click:

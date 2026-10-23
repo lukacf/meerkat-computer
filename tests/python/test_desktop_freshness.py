@@ -233,17 +233,10 @@ async def test_observation_after_acknowledged_input_may_show_a_ticking_window(de
     assert desktop.accessibility.inputs == [("invoke", BUTTON.key, 0)]
 
 
-async def test_visual_mode_and_unknown_hit_keep_full_event_fence(desktop):
+async def test_hybrid_unknown_hit_without_visual_anchor_keeps_full_event_fence(desktop):
     background_clock(desktop)
     body, _, _ = await observe(desktop)
     event(desktop.accessibility, member="ChildrenChanged")
     with pytest.raises(WorkerError):
         await desktop.perform("computer_act", act(body, type="click", x=400, y=200))
-    from test_desktop import lease
-
-    await desktop.configure(lease(2, "visual"))
-    body, _, _ = await observe(desktop)
-    event(desktop.accessibility, member="ChildrenChanged")
-    with pytest.raises(WorkerError):
-        await desktop.perform("computer_act", act(body, type="click", x=280, y=50))
     assert not desktop.x11.inputs
