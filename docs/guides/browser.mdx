@@ -53,6 +53,13 @@ Use the [observation controls](/concepts/observations) to request more detail.
 Opening a native file dialog requires a desktop observation; a browser DOM
 snapshot does not describe that dialog.
 
+Navigation happens before its follow-up capture. If `browser_navigate` reports an
+unknown effect, the page may already have changed. Request a fresh browser
+observation or inspect independent state before choosing another action; do not
+automatically repeat the navigation. Capture can still fail when an observed
+target changes during collection. See [fresh references](/concepts/observations#act-once-then-inspect)
+for the visibility and stale-action checks.
+
 Browser automation and guest shell are separate capabilities. Giving an agent
 exec lets it run other tools inside its computer. That is useful for artifacts
 and debugging, but does not turn benchmark instructions into enforced policy.

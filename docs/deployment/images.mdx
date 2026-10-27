@@ -70,5 +70,10 @@ artifacts. Existing computers keep their immutable profile. This package does
 not implement automatic image upgrades or workspace migration. Existing guests
 need a newly built image to receive added packages such as the PDF viewer.
 
+Browser capture fixes execute in the guest worker. Updating only the host client,
+broker or wake gateway does not update an existing guest's worker. Record the
+guest worker's source or artifact identity during qualification; successful host
+checks alone do not establish that the guest contains a fix.
+
 See [native applications](/guides/native-desktop), [configuration](/reference/configuration)
 and the [detailed image implementation](https://github.com/lukacf/meerkat-computer/blob/main/infra/README.md#optional-native-desktop-image).

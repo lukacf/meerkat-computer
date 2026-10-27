@@ -123,6 +123,7 @@ TARGET_SNAPSHOT = """({key, interactive}) => {
   const navigation = order();
   return {
     pointer,
+    has: target => records.has(target),
     refsStable: refs => doc===document && root===document.documentElement && refs.every(same),
     check: action => {
       if (doc!==document || root!==document.documentElement) return false;
@@ -394,7 +395,11 @@ class Browser:
                     handles = await page.query_selector_all(INTERACTIVE)
                     pending_handles.update(handles)
                     for handle in handles:
-                        if await handle.is_visible():
+                        # Playwright also calls transparent elements visible. Refs
+                        # must belong to the snapshot used to validate them.
+                        if await handle.is_visible() and await targets.evaluate(
+                            "(state, target) => state.has(target)", handle
+                        ):
                             bounds = await handle.bounding_box()
                             if (
                                 bounds

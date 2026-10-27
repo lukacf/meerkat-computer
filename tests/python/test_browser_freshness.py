@@ -53,6 +53,37 @@ async def tick(worker):
     await worker.browser.page.wait_for_function("before => ticks > before", arg=before)
 
 
+@pytest.mark.parametrize("navigate", [False, True])
+async def test_transparent_control_does_not_prevent_browser_observation(worker, navigate):
+    html = HTML + """<a href="#content"
+        style="position:fixed;left:200px;top:100px;opacity:0">Skip content</a>"""
+    if navigate:
+        async def page(route):
+            await route.fulfill(status=200, content_type="text/html", body=html)
+
+        await worker.browser.page.route("http://capture.invalid/**", page)
+        status, body = await worker.call(call(
+            "browser_navigate", {"url": "http://capture.invalid/"}, "navigate"
+        ))
+        assert status == 200, body.get("error")
+        assert body["metrics"]["delta"]["navigations"] == 1
+        assert body["content"][1]["mimeType"] == "image/png"
+        view = json.loads(body["content"][0]["text"])
+    else:
+        await worker.browser.page.set_content(html)
+        view = await observe(worker)
+    assert all(item["label"] != "Skip content" for item in view["elements"])
+    ref = next(item["ref"] for item in view["elements"] if item["label"] == "Continue")
+    status, body = await worker.call(call(
+        "computer_act",
+        {"observation_id": view["observation_id"], "action": {"type": "click", "ref": ref}},
+        "click-visible-control",
+    ))
+    assert status == 200, body.get("error")
+    assert await worker.browser.page.evaluate("window.clicks") == 1
+    assert body["metrics"]["delta"]["clicks"] == 1
+
+
 @pytest.mark.parametrize("target", ["ref", "coordinates", "key", "scroll"])
 async def test_unrelated_timer_does_not_stale_observed_input(worker, target):
     if target == "key":
