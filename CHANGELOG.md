@@ -40,6 +40,9 @@ Initial release candidate:
   disks, explicit image provisioning and generated lifecycle authority.
 - Browser navigation, bounded semantic and visual observations, native Linux
   X11/AT-SPI accessibility, screenshots, shell, files and guest administration.
+- Browser observations use the same visibility snapshot when selecting and
+  validating action references. Transparent controls no longer cause repeated
+  unstable captures of an otherwise usable page.
 - Optional desktop images with Blender and other native apps; Blender can run
   Python and return visual evidence through normal computer tools.
 - An encrypted realm credential store, reusable identity assignments and private
