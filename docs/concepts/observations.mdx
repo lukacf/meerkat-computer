@@ -105,6 +105,13 @@ The worker retains the private state needed for stale-action checks rather than
 using only the compact model-facing projection. Compact output is a presentation
 bound, not weaker grant authority.
 
+Browser refs come from the same private visibility snapshot used to validate the
+capture. Elements excluded from that snapshot, including zero-opacity controls,
+do not receive actionable refs. The ARIA text may still describe content without
+a corresponding ref. Changes to an observed target still invalidate its ref.
+For ordinary browser input, unrelated page updates do not make a stable target
+stale by themselves. Secure-input continuations use stricter document-change checks.
+
 Actions normally return a fresh observation. If an effect is unknown, observe or
 inspect independent state before deciding what to do next; do not replay the
 previous command automatically. See [tools](/reference/tools) and
