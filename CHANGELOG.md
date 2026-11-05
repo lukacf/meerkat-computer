@@ -8,6 +8,14 @@ in the artifact's `manifest.json`; qualification belongs in [VERIFICATION.md](VE
 
 Initial release candidate:
 
+- Semantic and hybrid browser observations, and the active entry of a browser
+  tab list, carry the active document's title with `title_truncated`,
+  `ready_state`, `document_id` and `observed_at_ms`. The title is read in the
+  same fenced snapshot as the URL and document token, whitespace-normalized,
+  null when blank, and charged to the text budget (160 compact, 300 full).
+  Visual-only observations and background tabs are unchanged and never read.
+  Secure input is rechecked after capture, discarding the whole capture if
+  protection is active or the check fails.
 - Desktop drags accept an optional path of 1-64 intermediate screen-pixel
   waypoints under one held button press. Every point is validated before input;
   the path has a 15-second input deadline and bounded release cleanup. Existing

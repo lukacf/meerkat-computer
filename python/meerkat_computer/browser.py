@@ -2,11 +2,13 @@
 
 import asyncio
 import base64
+import hashlib
 import json
 import math
 import os
 import re
 import secrets
+import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -144,6 +146,22 @@ TARGET_SNAPSHOT = """({key, interactive}) => {
       return action.type!=='drag' || point(action.end_x,action.end_y);
     }
   };
+}"""
+
+# One read of the active document at one instant: the viewport size, its title,
+# readyState, location and the per-document token that the context_signature
+# fence carries. The title is normalized in the page (each whitespace run becomes
+# one space, then trimmed) and at most TITLE_READ_CHARS code points of it leave
+# the page, never half of a surrogate pair.
+TITLE_READ_CHARS = 301
+READY_STATES = {"loading", "interactive", "complete"}
+DOCUMENT_SNAPSHOT = """([key, cap]) => {
+  let title = '', ready = null;
+  try { title = String(document.title ?? '').replace(/\\s+/g, ' ').trim(); } catch {}
+  try { ready = String(document.readyState); } catch {}
+  title = Array.from(title.slice(0, 2 * cap + 1)).slice(0, cap).join('');
+  return {width:innerWidth, height:innerHeight, title,
+    ready_state:ready, url:location.href, token:window[key]?.token ?? null};
 }"""
 
 
@@ -338,6 +356,68 @@ class Browser:
         page, values = await self.signature()
         return page, values[1:]
 
+    async def document_snapshot(self, page):
+        snapshot = await page.evaluate(DOCUMENT_SNAPSHOT, [self.observer_key, TITLE_READ_CHARS])
+        return snapshot, int(time.time() * 1000)
+
+    @staticmethod
+    def same_document(snapshot, context):
+        # context_signature values: [token, href, scrollX, scrollY, width, height].
+        _, values = context
+        return snapshot["token"] is not None and [snapshot["token"], snapshot["url"]] == values[:2]
+
+    def document_metadata(self, snapshot, observed_at_ms, budget, detail):
+        """Title metadata of the fenced active document, charged to the text budget."""
+        title = snapshot["title"] if isinstance(snapshot["title"], str) else ""
+        value = budget.take(title, limit=160 if detail == "compact" else 300) if title else ""
+        ready_state = snapshot["ready_state"]
+        return {
+            "title": value or None,
+            # TITLE_READ_CHARS exceeds both limits, so a title cut in the page is
+            # always cut again here and counted once by the budget.
+            "title_truncated": value != title,
+            "ready_state": ready_state if ready_state in READY_STATES else None,
+            "document_id": hashlib.sha256(
+                f"{self.observer_key}:{snapshot['token']}".encode()
+            ).hexdigest()[:32],
+            "observed_at_ms": observed_at_ms,
+        }
+
+    async def privacy_recheck(self):
+        """After capture: None to publish, else the guarded continuation to return.
+
+        Secure input is worker-wide. If protection is active when a capture is about
+        to be returned, or the check itself fails, the whole capture is discarded.
+        """
+        if self.secure is None:
+            return None
+        try:
+            if not await self.secure.guarded():
+                return None
+            guarded = await self.secure.observation()
+        except Exception:  # noqa: BLE001 - fail closed; page/secret text never surfaces
+            guarded = None
+        if guarded is None:
+            raise WorkerError(
+                "privacy_guarded", "Secure input state changed during capture; observe again"
+            )
+        return guarded
+
+    async def active_tab_document(self, page):
+        """URL and title metadata of the active tab's document, or why it is unavailable."""
+        projection = self.projection()
+        for _ in range(3):
+            before = await self.context_signature()
+            snapshot, observed_at_ms = await self.document_snapshot(page)
+            url = page.url  # Read inside the fence, so it names the same document.
+            if self.same_document(snapshot, before) and await self.context_signature() == before:
+                budget = TextBudget(projection.max_text_chars)
+                return {
+                    "url": url,
+                    **self.document_metadata(snapshot, observed_at_ms, budget, projection.detail),
+                }
+        return {"title": None, "title_unavailable": "document_changed"}
+
     async def validate_observation(self, observation_id):
         """Validate ordinary observation context without admitting or consuming input."""
         if observation_id != self.observation_id or not self.observation_id:
@@ -375,7 +455,10 @@ class Browser:
                         "interactive": INTERACTIVE,
                     },
                 )
-                size = await page.evaluate("({width:innerWidth,height:innerHeight})")
+                active, observed_at_ms = await self.document_snapshot(page)
+                if not self.same_document(active, before):
+                    continue  # Not the fenced document; capture again.
+                size = {"width": active["width"], "height": active["height"]}
                 body = {
                     "observation_id": secrets.token_hex(16),
                     "surface": "browser",
@@ -392,6 +475,9 @@ class Browser:
                     elements = []
                     inspected = 0
                     budget = TextBudget(projection.max_text_chars)
+                    document = self.document_metadata(
+                        active, observed_at_ms, budget, projection.detail
+                    )
                     handles = await page.query_selector_all(INTERACTIVE)
                     pending_handles.update(handles)
                     for handle in handles:
@@ -447,6 +533,7 @@ class Browser:
                     metadata = projection.metadata(inspected, len(elements), budget)
                     body.update(
                         url=page.url,
+                        document=document,
                         accessibility=accessibility,
                         accessibility_truncated=accessibility != snapshot,
                         elements=elements,
@@ -474,6 +561,9 @@ class Browser:
                     "(state, refs) => state.refsStable(refs)", list(new_refs.values())
                 )
                 if before == after and stable_refs:
+                    guarded = await self.privacy_recheck()
+                    if guarded is not None:
+                        return guarded  # The capture is discarded with its handles.
                     signature = await self.signature()
                     self.observation_id = body["observation_id"]
                     self.observation_signature = signature
@@ -772,16 +862,20 @@ class Browser:
         if arguments.action == "list":
             if self.secure is not None and await self.secure.guarded():
                 return await self.secure.observation(), self.operation_metrics
-            return [
-                text_block(
-                    {
-                        "tabs": [
-                            {"tab_id": key, "url": page.url, "active": page is self.page}
-                            for key, page in self.tabs.items()
-                        ]
-                    }
-                )
-            ], self.operation_metrics
+            tabs = [
+                {"tab_id": key, "url": page.url, "active": page is self.page}
+                for key, page in self.tabs.items()
+            ]
+            # Only the active tab, and only where the lease already exposes page
+            # content, gains its document's title. Background tabs are never read.
+            if self.lease.observation.mode in {"semantic", "hybrid"}:
+                for entry in tabs:
+                    if entry["active"]:
+                        entry.update(await self.active_tab_document(self.page))
+            guarded = await self.privacy_recheck()
+            if guarded is not None:
+                return guarded, self.operation_metrics
+            return [text_block({"tabs": tabs})], self.operation_metrics
         await self.invalidate()
         self.record("tab_command_attempts")
         if arguments.action == "new":
