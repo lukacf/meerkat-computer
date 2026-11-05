@@ -5,7 +5,7 @@ import json
 import secrets
 
 import pytest
-from meerkat_computer.browser import TARGET_SNAPSHOT
+from meerkat_computer.browser import DOCUMENT_SNAPSHOT, TARGET_SNAPSHOT
 from meerkat_computer.protocol import WorkerError
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
@@ -115,7 +115,7 @@ async def test_failed_capture_releases_all_acquired_handles(worker, monkeypatch,
         evaluate = page.evaluate
 
         async def fail_size(expression, *args, **kwargs):
-            if expression == "({width:innerWidth,height:innerHeight})":
+            if expression == DOCUMENT_SNAPSHOT:  # The viewport size is read with the title.
                 return await fail()
             return await evaluate(expression, *args, **kwargs)
 
